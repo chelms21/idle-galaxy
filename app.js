@@ -1,7 +1,7 @@
 // --- INITIAL GAME STATE ---
 let gameState = {
     energy: 100,
-    scrap: 10, // Started with a little scrap to help the first building
+    scrap: 10, 
     data: 0,
     colonists: 0, 
     maxColonists: 5, 
@@ -29,10 +29,6 @@ const PREFIXES = ["Nova", "Sector", "Exo", "Prime", "Void", "Krypton", "Zenith"]
 
 // --- CORE FUNCTIONS ---
 
-/**
- * MANUAL LABOR: The "Cold Start" fix.
- * Allows the player to click to get scrap when they have no workers.
- */
 function manualScrap() {
     gameState.scrap += 1;
     updateUI();
@@ -60,6 +56,17 @@ function recruitColonist() {
         updateUI();
     } else if (gameState.colonists >= gameState.maxColonists) {
         alert("INSUFFICIENT_HABITATION: Build more Hab-Quarters.");
+    }
+}
+
+function upgradeCommand() {
+    const cost = Math.pow(gameState.maxPlanets, 2) * 25; 
+    if (gameState.scrap >= cost) {
+        gameState.scrap -= cost;
+        gameState.maxPlanets++;
+        updateUI();
+    } else {
+        alert(`NEED ${cost} SCRAP TO EXPAND COMMAND.`);
     }
 }
 
@@ -135,25 +142,19 @@ function gameLoop() {
         const biome = BIOMES[planet.type];
         const totalModules = planet.modules.extractor + planet.modules.solarArray + planet.modules.lab;
         
-        // EFFECTIVENESS TWEAK: 
-        // 0.1 base automation + worker bonus. Max 1.0.
         let workerRatio = totalModules > 0 ? planet.assignedWorkers / totalModules : 0;
         const effectiveness = Math.min(1, 0.1 + workerRatio);
 
-        // Scrap Gen
         let drillBonus = 1 + (gameState.upgrades.advancedDrills * 0.1);
         let scrapProd = (planet.modules.extractor * 0.25 * biome.scrap * drillBonus * effectiveness);
         gameState.scrap += (scrapProd / 10);
 
-        // Energy Gen
         let cryoBonus = (planet.type === "Frozen" && gameState.upgrades.cryoPipes) ? 2.5 : 1;
         let energyProd = (planet.modules.solarArray * 0.4 * biome.energy * cryoBonus * effectiveness);
         gameState.energy += (energyProd / 10);
 
-        // Data Gen
         gameState.data += (planet.modules.lab * 0.1 * effectiveness / 10);
 
-        // Life Support Cost
         if (planet.assignedWorkers > 0) {
             gameState.energy -= (planet.assignedWorkers * 0.1 * biome.oxygenCost / 10);
         }
@@ -174,8 +175,17 @@ function updateUI() {
     const unassigned = gameState.colonists - gameState.planets.reduce((sum, p) => sum + p.assignedWorkers, 0);
     document.getElementById('unassigned-display').innerText = unassigned;
 
+    // Update Manual Buttons with Prices
     const scanBtn = document.querySelector('button[onclick="manualScan()"]');
-    if(scanBtn) scanBtn.innerText = `[ EXECUTE_SCAN ] (Cost: ${gameState.scanCost} E)`;
+    if(scanBtn) scanBtn.innerText = `[ EXECUTE_SCAN ] (${gameState.scanCost} E)`;
+
+    const recruitBtn = document.querySelector('button[onclick="recruitColonist()"]');
+    const recruitCost = 20 + (gameState.colonists * 10);
+    if(recruitBtn) recruitBtn.innerText = `[ RECRUIT_COLONIST ] (${recruitCost} S)`;
+
+    const commandBtn = document.querySelector('button[onclick="upgradeCommand()"]');
+    const commandCost = Math.pow(gameState.maxPlanets, 2) * 25; 
+    if(commandBtn) commandBtn.innerText = `[ EXPAND_COMMAND ] (${commandCost} S)`;
 }
 
 function renderPlanets() {
@@ -187,6 +197,12 @@ function renderPlanets() {
         const card = document.createElement('div');
         card.className = 'planet-card';
         
+        // Dynamic costs for this specific planet
+        const extCost = 10 + (planet.modules.extractor * 15);
+        const solCost = 10 + (planet.modules.solarArray * 15);
+        const labCost = 50 + (planet.modules.lab * 15);
+        const habCost = 30 + (planet.modules.hab * 15);
+
         card.innerHTML = `
             <div style="display: flex; justify-content: space-between;">
                 <strong>SYS//: ${planet.name}</strong>
@@ -199,10 +215,10 @@ function renderPlanets() {
             </div>
             <hr border="1" color="#222">
             <div style="margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-                <button onclick="buildModule('${planet.id}', 'extractor')">EXTRACTOR [${planet.modules.extractor}]</button>
-                <button onclick="buildModule('${planet.id}', 'solarArray')">SOLAR [${planet.modules.solarArray}]</button>
-                <button onclick="buildModule('${planet.id}', 'lab')">LAB [${planet.modules.lab}]</button>
-                <button onclick="buildModule('${planet.id}', 'hab')">HAB_QUARTERS [${planet.modules.hab}]</button>
+                <button onclick="buildModule('${planet.id}', 'extractor')">EXTRACTOR [${planet.modules.extractor}] (${extCost}S)</button>
+                <button onclick="buildModule('${planet.id}', 'solarArray')">SOLAR [${planet.modules.solarArray}] (${solCost}S)</button>
+                <button onclick="buildModule('${planet.id}', 'lab')">LAB [${planet.modules.lab}] (${labCost}S)</button>
+                <button onclick="buildModule('${planet.id}', 'hab')">HAB [${planet.modules.hab}] (${habCost}S)</button>
             </div>
         `;
         list.appendChild(card);
