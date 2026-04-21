@@ -1,103 +1,93 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>ORBITAL_INCREMENTAL_v1.0</title>
+    <title>ORBITAL_COMMAND_v2</title>
     <style>
-        body {
-            background-color: #0f0f0f;
-            color: #00ff41; /* Classic Terminal Green */
-            font-family: 'Courier New', Courier, monospace;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 20px;
+        body { 
+            background: #000; color: #00ff41; font-family: 'Courier New', monospace; 
+            margin: 0; display: flex; height: 100vh; overflow: hidden; 
         }
-        #ui-container {
-            border: 1px solid #00ff41;
-            padding: 20px;
-            width: 80%;
-            max-width: 800px;
-            box-shadow: 0 0 15px rgba(0, 255, 65, 0.2);
+        
+        /* LEFT SIDE: Mission Control (Fixed) */
+        #mission-control {
+            width: 350px; border-right: 2px solid #00ff41; padding: 15px;
+            display: flex; flex-direction: column; overflow-y: auto;
         }
-        .stats-bar {
-            display: flex;
-            justify-content: space-between;
-            border-bottom: 1px solid #333;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
+
+        /* RIGHT SIDE: Galaxy Map (Scrollable) */
+        #galaxy-view {
+            flex-grow: 1; padding: 20px; overflow-y: auto; background: #050505;
         }
-        .planet-card {
-            border: 1px dashed #00ff41;
-            padding: 10px;
-            margin: 10px 0;
+
+        .stats-bar { background: #111; padding: 10px; border: 1px solid #333; margin-bottom: 15px; font-size: 13px; }
+        .stats-bar div { margin-bottom: 5px; }
+
+        button { 
+            background: transparent; border: 1px solid #00ff41; color: #00ff41; 
+            padding: 5px; cursor: pointer; margin: 2px; font-family: inherit; font-size: 11px;
         }
-        button {
-            background: transparent;
-            color: #00ff41;
-            border: 1px solid #00ff41;
-            padding: 10px;
-            cursor: pointer;
-            font-family: inherit;
+        button:hover { background: #00ff41; color: #000; }
+        button:disabled { border-color: #222; color: #222; cursor: default; }
+
+        .planet-card { 
+            border: 1px solid #333; padding: 15px; margin-bottom: 20px; 
+            background: #000; width: 100%; max-width: 600px;
         }
-        button:hover {
-            background: #00ff41;
-            color: #000;
+
+        #event-log { 
+            font-size: 10px; color: #00ff41; line-height: 1.4; border: 1px solid #222; 
+            padding: 5px; height: 120px; overflow-y: hidden; background: #020202;
         }
-        button:disabled {
-            border-color: #333;
-            color: #333;
-            cursor: not-allowed;
-        }
+
+        details summary { cursor: pointer; color: #888; font-size: 12px; margin-bottom: 10px; }
+        h3 { border-bottom: 1px solid #00ff41; padding-bottom: 5px; font-size: 16px; margin-top: 20px; }
     </style>
 </head>
 <body>
 
-<div id="ui-container">
-    <div class="stats-bar">
-        <div>ENERGY: <span id="energy-display">100</span></div>
-        <div>SCRAP: <span id="scrap-display">20</span></div>
-        <div>RESEARCH_DATA: <span id="data-display">0</span></div>
-        <div>POPULATION: <span id="pop-display">0 / 5</span></div>
-        <div>FREIGHTERS: <span id="ship-display">0 / 0</span></div>
-    </div>
-
-    <details style="border: 1px solid #333; padding: 10px; margin-bottom: 20px;">
-        <summary style="cursor: pointer; color: #888;">[ VIEW_OPERATIONS_MANUAL ]</summary>
-        <div style="font-size: 12px; line-height: 1.6; color: #aaa; margin-top: 10px;">
-            <p><strong>1. COLD START:</strong> Click [ SCRAP_WRECKAGE ] to manually collect scrap until you can afford a Colonist.</p>
-            <p><strong>2. DISCOVERY:</strong> Use Energy to [ EXECUTE_SCAN ]. Cost increases per planet found.</p>
-            <p><strong>3. COLONIZATION:</strong> Recruit Colonists and assign them to planets. Buildings work at 10% efficiency without workers.</p>
-            <p><strong>4. LOGISTICS:</strong> Construct Freighters to [ ESTABLISH_TRADE_ROUTE ]. Active routes cost Energy fuel.</p>
-            <p><strong>5. RESEARCH:</strong> Labs produce Data. Use it in the Research Database to unlock permanent empire-wide bonuses.</p>
+    <div id="mission-control">
+        <h3>STATION_STATUS</h3>
+        <div class="stats-bar">
+            <div>ENERGY: <span id="energy-display">100</span></div>
+            <div>SCRAP: <span id="scrap-display">20</span></div>
+            <div>RESEARCH: <span id="data-display">0</span></div>
+            <div>POPULATION: <span id="pop-display">0 / 5</span></div>
+            <div>FREIGHTERS: <span id="ship-display">0 / 0</span></div>
+            <div style="color: #00ff41; font-size: 11px;">UNASSIGNED: <span id="unassigned-display">0</span></div>
         </div>
-    </details>
 
-    <div id="controls" style="margin-bottom: 20px;">
-        <button onclick="manualScrap()" style="background: #00ff41; color: #000; font-weight: bold;">[ SCRAP_WRECKAGE ] (+1 SCRAP)</button>
-        <button onclick="manualScan()">[ EXECUTE_SCAN ]</button>
-        <button onclick="upgradeCommand()">[ EXPAND_COMMAND_CENTER ]</button>
-        <button onclick="recruitColonist()">[ RECRUIT_COLONIST ]</button>
-        <button onclick="buildFreighter()">[ CONSTRUCT_FREIGHTER ]</button>
-        <div style="font-size: 12px; margin-top: 5px; color: #00ff41;">UNASSIGNED_WORKERS: <span id="unassigned-display">0</span></div>
-    </div>
+        <details>
+            <summary>[ OPERATIONS_MANUAL ]</summary>
+            <div style="font-size: 10px; color: #aaa;">
+                1. Scavenge wreckage for initial scrap.<br>
+                2. Scan for planets.<br>
+                3. Recruit colonists & assign to planets.<br>
+                4. Establish trade to use global pool.<br>
+                5. Research to boost efficiency.
+            </div>
+        </details>
 
-    <div id="galaxy-map">
-        <h3>ACTIVE_COLONIES</h3>
-        <div id="planet-list"></div>
-    </div>
+        <h3>COMMAND_DECK</h3>
+        <button onclick="manualScrap()" style="background: #00ff41; color: #000; font-weight: bold; width: 100%;">[ SCRAP_WRECKAGE ]</button>
+        <button id="btn-scan" onclick="manualScan()" style="width: 100%;"></button>
+        <button id="btn-recruit" onclick="recruitColonist()" style="width: 100%;"></button>
+        <button id="btn-freighter" onclick="buildFreighter()" style="width: 100%;"></button>
+        <button id="btn-command" onclick="upgradeCommand()" style="width: 100%;"></button>
 
-    <div id="research-section" style="border: 1px solid #00ff41; margin-top: 20px; padding: 10px;">
-        <h3>CENTRAL_RESEARCH_DATABASE</h3>
+        <h3>RESEARCH_DB</h3>
         <div id="research-list"></div>
-    </div>
 
-    <div id="log-section" style="border: 1px solid #333; margin-top: 20px; padding: 10px; font-family: monospace; font-size: 11px; background: #050505; color: #00ff41;">
-        <div style="color: #444; margin-bottom: 5px;">> SYSTEM_LOG_OUTPUT</div>
+        <h3>SYSTEM_LOG</h3>
         <div id="event-log">AWAITING_SIGNAL...</div>
     </div>
-</div>
 
-<script src="app.js"></script>
+    <div id="galaxy-view">
+        <h2 style="margin-top: 0;">GALAXY_MAP_OUTPUT</h2>
+        <div id="planet-list">
+            <div style="color: #444;">NO_COLONIES_DETECTED. EXECUTE_SCAN_TO_PROCEED.</div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
 </body>
 </html>
