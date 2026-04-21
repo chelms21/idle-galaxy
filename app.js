@@ -3,6 +3,8 @@ let gameState = {
     energy: 100,
     scrap: 0,
     planets: [],
+    scanCost: 10, // Starting cost
+    maxPlanets: 3, // Starting limit
     lastTick: Date.now()
 };
 
@@ -13,12 +15,23 @@ const PREFIXES = ["Nova", "Sector", "Exo", "Prime", "Void"];
 // --- CORE FUNCTIONS ---
 
 /**
- * Consumes energy to find a new planet.
+ * Consumes energy to find a new planet. 
+ * Cost increases each time a scan is successful.
  */
 function manualScan() {
-    if (gameState.energy >= 10) {
-        gameState.energy -= 10;
+    if (gameState.planets.length >= gameState.maxPlanets) {
+        alert("COMMAND_CAPACITY_REACHED: Upgrade Command Center to manage more colonies.");
+        return;
+    }
+
+    if (gameState.energy >= gameState.scanCost) {
+        gameState.energy -= gameState.scanCost;
+        
         discoverPlanet();
+        
+        // Increase the cost for the next scan (Exponential scaling)
+        gameState.scanCost = Math.floor(gameState.scanCost * 1.5);
+        
         updateUI();
     } else {
         console.log("INSUFFICIENT_ENERGY");
@@ -26,7 +39,21 @@ function manualScan() {
 }
 
 /**
- * Generates a new planet with unique multipliers and empty module slots.
+ * Upgrades the global command capacity to allow more planets.
+ */
+function upgradeCommand() {
+    const cost = Math.pow(gameState.maxPlanets, 2) * 20; // 180, 320, 500...
+    if (gameState.scrap >= cost) {
+        gameState.scrap -= cost;
+        gameState.maxPlanets++;
+        updateUI();
+    } else {
+        alert(`NEED ${cost} SCRAP TO EXPAND COMMAND.`);
+    }
+}
+
+/**
+ * Generates a new planet with unique multipliers.
  */
 function discoverPlanet() {
     const id = Math.random().toString(36).substr(2, 9);
@@ -37,8 +64,8 @@ function discoverPlanet() {
         id: id,
         name: name,
         type: type,
-        scrapPerTick: Math.random() * 0.5,
-        energyPerTick: Math.random() * 0.2,
+        scrapPerTick: Math.random() * 0.4,
+        energyPerTick: Math.random() * 0.1,
         modules: {
             extractor: 0,
             solarArray: 0
@@ -49,33 +76,22 @@ function discoverPlanet() {
     renderPlanets();
 }
 
-/**
- * Purchases a building for a specific planet.
- * Cost scales based on how many modules are already present.
- */
 function buildModule(planetId, moduleType) {
     const planet = gameState.planets.find(p => p.id === planetId);
-    // Base cost is 10, increases by 5 for every existing module of that type
     const cost = 10 + (planet.modules[moduleType] * 5); 
 
     if (gameState.scrap >= cost) {
         gameState.scrap -= cost;
         planet.modules[moduleType]++;
         
-        // Update the planet's output based on the new building
-        if (moduleType === 'extractor') planet.scrapPerTick += 0.25;
-        if (moduleType === 'solarArray') planet.energyPerTick += 0.4;
+        if (moduleType === 'extractor') planet.scrapPerTick += 0.20;
+        if (moduleType === 'solarArray') planet.energyPerTick += 0.35;
         
         renderPlanets();
         updateUI();
-    } else {
-        console.log("INSUFFICIENT_RESOURCES");
     }
 }
 
-/**
- * Allows the user to rename a discovered planet (The NMS "Discovery" hook).
- */
 function renamePlanet(planetId) {
     const planet = gameState.planets.find(p => p.id === planetId);
     const newName = prompt("ENTER_NEW_DESIGNATION:", planet.name);
@@ -87,18 +103,14 @@ function renamePlanet(planetId) {
 
 // --- ENGINE LOOP ---
 
-/**
- * Main game loop running at 10Hz (100ms per tick).
- */
 function gameLoop() {
-    // Generate resources from all discovered planets
     gameState.planets.forEach(planet => {
         gameState.scrap += (planet.scrapPerTick / 10);
         gameState.energy += (planet.energyPerTick / 10);
     });
 
-    // Passive base energy regeneration
-    gameState.energy += 0.05;
+    // Slowed down base regen to make planet production more vital
+    gameState.energy += 0.02;
 
     updateUI();
 }
@@ -108,7 +120,11 @@ function gameLoop() {
 function updateUI() {
     document.getElementById('energy-display').innerText = Math.floor(gameState.energy);
     document.getElementById('scrap-display').innerText = Math.floor(gameState.scrap);
-    document.getElementById('planet-count').innerText = gameState.planets.length;
+    document.getElementById('planet-count').innerText = `${gameState.planets.length} / ${gameState.maxPlanets}`;
+    
+    // Update the scan button text to show the current cost
+    const scanBtn = document.querySelector('button[onclick="manualScan()"]');
+    if(scanBtn) scanBtn.innerText = `[ EXECUTE_SCAN ] (Cost: ${gameState.scanCost} Energy)`;
 }
 
 function renderPlanets() {
@@ -145,5 +161,4 @@ function renderPlanets() {
     });
 }
 
-// Initialize Loop
 setInterval(gameLoop, 100);
