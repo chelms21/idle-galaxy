@@ -58,17 +58,20 @@
         <div>ENERGY: <span id="energy-display">100</span></div>
         <div>SCRAP: <span id="scrap-display">0</span></div>
         <div>DATA: <span id="data-display">0</span></div>
+        <div>POP: <span id="pop-display">0 / 5</span></div>
+    </div>
+
+    <div id="controls" style="margin-bottom: 20px;">
+        <button onclick="manualScan()">[ EXECUTE_SCAN ]</button>
+        <button onclick="upgradeCommand()">[ EXPAND_COMMAND ]</button>
+        <button onclick="recruitColonist()">[ RECRUIT_COLONIST ] (Cost: Scrap)</button>
+        <div style="font-size: 12px; margin-top: 5px;">UNASSIGNED_WORKERS: <span id="unassigned-display">0</span></div>
     </div>
 
     <div id="research-section" style="border: 1px solid #00ff41; margin-top: 20px; padding: 10px;">
         <h3>CENTRAL_RESEARCH_DATABASE</h3>
         <div id="research-list">
         </div>
-    </div>
-
-    <div id="controls">
-        <button onclick="manualScan()">[ EXECUTE_SCAN ] (Cost: 10 Energy)</button>
-        <button onclick="upgradeCommand()">[ EXPAND_COMMAND_CENTER ]</button>
     </div>
 
     <div id="galaxy-map">
