@@ -93,10 +93,22 @@
         <div id="event-log">AWAITING_SIGNAL...</div>
     </div>
 
-    <div id="galaxy-view">
-        <h2 style="margin-top: 0; color: #fff; font-size: 20px;">GALAXY_MAP_OUTPUT</h2>
-        <div id="planet-list">
-            <div style="color: #444;">NO_COLONIES_DETECTED. EXECUTE_SCAN_TO_PROCEED.</div>
+    <div id="galaxy-view" style="display: flex; flex-direction: column;">
+        <div id="map-frame" style="flex: 1; border: 1px solid #1a1a1a; padding: 20px; background: #020202; overflow: auto;">
+            <h2 style="margin-top: 0; color: #fff; font-size: 14px; border-bottom: 1px solid #222; padding-bottom: 5px;">TACTICAL_GRID_OVERLAY</h2>
+            <div id="map-grid" style="display: flex; flex-wrap: wrap; gap: 15px;">
+                </div>
+        </div>
+
+        <div id="command-console" style="height: 350px; border-top: 2px solid #00ff41; background: #000; padding: 20px; display: flex; gap: 20px;">
+            <div id="sector-info" style="width: 250px; border-right: 1px solid #222; padding-right: 20px;">
+                <h3 style="margin-top: 0;">SECTOR_LINK</h3>
+                <div id="selected-sector-view" style="color: #666; font-size: 11px;">NO_SECTOR_LINKED</div>
+            </div>
+            <div id="planet-detail" style="flex-grow: 1;">
+                <h3 style="margin-top: 0;">PLANET_COMMAND</h3>
+                <div id="selected-planet-view" style="color: #444;">AWAITING_COORDINATES...</div>
+            </div>
         </div>
     </div>
 
