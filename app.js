@@ -203,5 +203,7 @@ function renderResearch() {
     `;
 }
 
+renderResearch();
+
 // Initial Render
 setInterval(gameLoop, 100);
