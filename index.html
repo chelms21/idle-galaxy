@@ -2,21 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>ORBITAL_COMMAND_v3</title>
+    <title>ORBITAL_COMMAND_v4</title>
     <style>
         body { 
             background: #000; color: #00ff41; font-family: 'Courier New', monospace; 
             margin: 0; display: flex; height: 100vh; overflow: hidden; 
         }
         
-        /* LEFT SIDE: Mission Control (Fixed) */
         #mission-control {
             width: 360px; border-right: 2px solid #00ff41; padding: 15px;
-            display: flex; flex-direction: column; overflow-y: auto;
-            background: #000;
+            display: flex; flex-direction: column; overflow-y: auto; background: #000;
         }
 
-        /* RIGHT SIDE: Galaxy Map (Scrollable) */
         #galaxy-view {
             flex-grow: 1; padding: 20px; overflow-y: auto; background: #050505;
         }
@@ -46,6 +43,11 @@
         h3 { border-bottom: 1px solid #00ff41; padding-bottom: 5px; font-size: 14px; margin-top: 20px; color: #fff; }
         
         .spec-box { margin-top: 10px; border: 1px dashed #00ff41; padding: 8px; text-align: center; }
+        
+        .sector-header {
+            padding: 8px 15px; margin-top: 35px; background: #111;
+            font-size: 14px; border-radius: 2px;
+        }
     </style>
 </head>
 <body>
@@ -66,27 +68,16 @@
 
         <div id="mega-section" style="border: 1px solid #ffaa00; padding: 10px; margin-bottom: 15px; background: #110;">
             <h3 style="color: #ffaa00; margin-top:0;">PROJECT: DYSON_SWARM</h3>
-            <button style="width:100%; border-color:#555; color:#555;" disabled>LOCKED: NEED_SCAN_DATA</button>
+            <button style="width:100%; border-color:#555; color:#555;" disabled>AWAITING_RESOURCES</button>
         </div>
 
         <h3>DATA_MANAGEMENT</h3>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-            <button onclick="saveToLocal()">MANUAL_SAVE</button>
-            <button onclick="loadFromLocal()">MANUAL_LOAD</button>
+            <button onclick="saveToLocal()">SAVE_DATA</button>
+            <button onclick="loadFromLocal()">LOAD_DATA</button>
             <button onclick="exportSave()">EXPORT_CODE</button>
             <button onclick="importSave()">IMPORT_CODE</button>
         </div>
-
-        <details style="margin-top: 15px;">
-            <summary>[ OPERATIONS_MANUAL ]</summary>
-            <div style="font-size: 10px; color: #aaa; line-height: 1.5;">
-                1. Scavenge wreckage for initial scrap.<br>
-                2. Scan for planets (Cost increases per find).<br>
-                3. Recruit colonists & assign to planets.<br>
-                4. Establish trade routes to gain resources.<br>
-                5. Specialization: Requires 250 Data + 5 Modules.
-            </div>
-        </details>
 
         <h3>COMMAND_DECK</h3>
         <button onclick="manualScrap()" style="background: #00ff41; color: #000; font-weight: bold; width: 100%;">[ SCRAP_WRECKAGE ]</button>
@@ -95,7 +86,7 @@
         <button id="btn-freighter" onclick="buildFreighter()" style="width: 100%;"></button>
         <button id="btn-command" onclick="upgradeCommand()" style="width: 100%;"></button>
 
-        <h3>RESEARCH_DATABASE</h3>
+        <h3>RESEARCH_DB</h3>
         <div id="research-list"></div>
 
         <h3>SYSTEM_LOG</h3>
