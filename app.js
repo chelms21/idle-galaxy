@@ -9,7 +9,7 @@ let gameState = {
     activeRoutes: 0, 
     planets: [],
     scanCost: 10,
-    maxPlanets: 3,
+    maxPlanets: 3, // Capacity limit
     upgrades: {
         cryoPipes: false,
         advancedDrills: 0,
@@ -205,6 +205,10 @@ function updateUI() {
     document.getElementById('data-display').innerText = Math.floor(gameState.data);
     document.getElementById('pop-display').innerText = `${gameState.colonists} / ${gameState.maxColonists}`;
     document.getElementById('ship-display').innerText = `${gameState.activeRoutes} / ${gameState.freighters}`;
+    
+    // NEW: Colony Capacity Counter
+    document.getElementById('colony-display').innerText = `${gameState.planets.length} / ${gameState.maxPlanets}`;
+    
     document.getElementById('unassigned-display').innerText = gameState.colonists - gameState.planets.reduce((sum, p) => sum + p.assignedWorkers, 0);
 
     document.getElementById('btn-scan').innerText = `[ EXECUTE_SCAN ] (${gameState.scanCost} ENERGY)`;
