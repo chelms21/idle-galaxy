@@ -1,10 +1,10 @@
 // --- INITIAL GAME STATE ---
 let gameState = {
     energy: 100,
-    scrap: 0,
+    scrap: 10, // Started with a little scrap to help the first building
     data: 0,
-    colonists: 0, // Total population
-    maxColonists: 5, // Capacity of your initial pods
+    colonists: 0, 
+    maxColonists: 5, 
     planets: [],
     scanCost: 10,
     maxPlanets: 3,
@@ -28,6 +28,15 @@ const BIOMES = {
 const PREFIXES = ["Nova", "Sector", "Exo", "Prime", "Void", "Krypton", "Zenith"];
 
 // --- CORE FUNCTIONS ---
+
+/**
+ * MANUAL LABOR: The "Cold Start" fix.
+ * Allows the player to click to get scrap when they have no workers.
+ */
+function manualScrap() {
+    gameState.scrap += 1;
+    updateUI();
+}
 
 function manualScan() {
     if (gameState.planets.length >= gameState.maxPlanets) {
@@ -87,7 +96,7 @@ function buildModule(planetId, moduleType) {
         planet.modules[moduleType]++;
         
         if (moduleType === 'hab') {
-            gameState.maxColonists += 5; // Each Hab module adds 5 slots
+            gameState.maxColonists += 5;
         }
         
         renderPlanets();
@@ -108,8 +117,6 @@ function assignWorker(planetId, amount) {
     updateUI();
 }
 
-// --- RESEARCH & ENGINE ---
-
 function buyUpgrade(techType) {
     const costs = { cryoPipes: 50, advancedDrills: 100, signalBoosters: 75 };
     const cost = costs[techType] + (techType !== 'cryoPipes' ? gameState.upgrades[techType] * 50 : 0);
@@ -124,35 +131,35 @@ function buyUpgrade(techType) {
 }
 
 function gameLoop() {
-    let totalWorkerPower = 0;
-
     gameState.planets.forEach(planet => {
         const biome = BIOMES[planet.type];
+        const totalModules = planet.modules.extractor + planet.modules.solarArray + planet.modules.lab;
         
-        // Efficiency is based on workers vs modules
-        // If you have 10 extractors but only 1 worker, production is low.
-        const workerEffectiveness = planet.assignedWorkers > 0 ? Math.min(1, planet.assignedWorkers / (planet.modules.extractor + planet.modules.solarArray + planet.modules.lab + 1)) : 0;
+        // EFFECTIVENESS TWEAK: 
+        // 0.1 base automation + worker bonus. Max 1.0.
+        let workerRatio = totalModules > 0 ? planet.assignedWorkers / totalModules : 0;
+        const effectiveness = Math.min(1, 0.1 + workerRatio);
 
         // Scrap Gen
         let drillBonus = 1 + (gameState.upgrades.advancedDrills * 0.1);
-        let scrapProd = (planet.modules.extractor * 0.25 * biome.scrap * drillBonus * workerEffectiveness);
+        let scrapProd = (planet.modules.extractor * 0.25 * biome.scrap * drillBonus * effectiveness);
         gameState.scrap += (scrapProd / 10);
 
         // Energy Gen
         let cryoBonus = (planet.type === "Frozen" && gameState.upgrades.cryoPipes) ? 2.5 : 1;
-        let energyProd = (planet.modules.solarArray * 0.4 * biome.energy * cryoBonus * workerEffectiveness);
+        let energyProd = (planet.modules.solarArray * 0.4 * biome.energy * cryoBonus * effectiveness);
         gameState.energy += (energyProd / 10);
 
         // Data Gen
-        gameState.data += (planet.modules.lab * 0.1 * workerEffectiveness / 10);
+        gameState.data += (planet.modules.lab * 0.1 * effectiveness / 10);
 
-        // Life Support Cost (Energy Drain)
+        // Life Support Cost
         if (planet.assignedWorkers > 0) {
             gameState.energy -= (planet.assignedWorkers * 0.1 * biome.oxygenCost / 10);
         }
     });
 
-    gameState.energy += 0.05; // Base passive regen
+    gameState.energy += 0.05; 
     updateUI();
 }
 
