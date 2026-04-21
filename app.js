@@ -9,7 +9,7 @@ let gameState = {
     activeRoutes: 0, 
     planets: [],
     scanCost: 10,
-    maxPlanets: 3, // Capacity limit
+    maxPlanets: 3,
     upgrades: {
         cryoPipes: false,
         advancedDrills: 0,
@@ -26,6 +26,13 @@ const BIOMES = {
     "Metallic": { scrap: 2.0, energy: 0.8, oxygenCost: 1.2, desc: "Rich Ores / Heavy Gravity" },
     "Gaseous":  { scrap: 0.2, energy: 1.2, oxygenCost: 2.0, desc: "Atmospheric Fuel / No Solid Ground" },
     "Desert":   { scrap: 1.1, energy: 2.0, oxygenCost: 0.8, desc: "Clear Skies / Sand Interference" }
+};
+
+const SPECIALIZATIONS = {
+    "NONE": { scrap: 1, energy: 1, data: 1, label: "STANDARD_COLONY" },
+    "FORGE": { scrap: 2.5, energy: 0.5, data: 0.5, label: "FORGE_WORLD" },
+    "POWER": { scrap: 0.5, energy: 2.5, data: 0.5, label: "POWER_HUB" },
+    "ARCHIVE": { scrap: 0.5, energy: 0.5, data: 2.5, label: "ARCHIVE_PRIME" }
 };
 
 const PREFIXES = ["Nova", "Sector", "Exo", "Prime", "Void", "Krypton", "Zenith"];
@@ -100,11 +107,26 @@ function discoverPlanet() {
         type: type,
         assignedWorkers: 0,
         isExporting: false, 
+        specialization: "NONE", // New track
         modules: { extractor: 0, solarArray: 0, lab: 0, hab: 0 }
     };
 
     gameState.planets.push(newPlanet);
     renderPlanets();
+}
+
+function specializePlanet(planetId, specType) {
+    const planet = gameState.planets.find(p => p.id === planetId);
+    const cost = 250; // Cost in Data to specialize
+    if (gameState.data >= cost) {
+        gameState.data -= cost;
+        planet.specialization = specType;
+        logMessage(`SYSTEM: ${planet.name} RECONFIGURED AS ${specType}.`);
+        renderPlanets();
+        updateUI();
+    } else {
+        logMessage("INSUFFICIENT_DATA: NEED 250 RESEARCH_DATA.");
+    }
 }
 
 function toggleTrade(planetId) {
@@ -166,16 +188,19 @@ function buyUpgrade(techType) {
 function gameLoop() {
     gameState.planets.forEach(planet => {
         const biome = BIOMES[planet.type];
+        const spec = SPECIALIZATIONS[planet.specialization];
         const totalModules = planet.modules.extractor + planet.modules.solarArray + planet.modules.lab;
         let workerRatio = totalModules > 0 ? planet.assignedWorkers / totalModules : 0;
         const effectiveness = Math.min(1, 0.1 + workerRatio);
 
+        // Production with Specialization multipliers
         let drillBonus = 1 + (gameState.upgrades.advancedDrills * 0.1);
-        gameState.scrap += (planet.modules.extractor * 0.25 * biome.scrap * drillBonus * effectiveness / 10);
+        gameState.scrap += (planet.modules.extractor * 0.25 * biome.scrap * drillBonus * spec.scrap * effectiveness / 10);
 
         let cryoBonus = (planet.type === "Frozen" && gameState.upgrades.cryoPipes) ? 2.5 : 1;
-        gameState.energy += (planet.modules.solarArray * 0.4 * biome.energy * cryoBonus * effectiveness / 10);
-        gameState.data += (planet.modules.lab * 0.1 * effectiveness / 10);
+        gameState.energy += (planet.modules.solarArray * 0.4 * biome.energy * cryoBonus * spec.energy * effectiveness / 10);
+        
+        gameState.data += (planet.modules.lab * 0.1 * spec.data * effectiveness / 10);
 
         if (planet.assignedWorkers > 0) gameState.energy -= (planet.assignedWorkers * 0.1 * biome.oxygenCost / 10);
         if (planet.isExporting) gameState.energy -= (0.2 / 10); 
@@ -205,10 +230,7 @@ function updateUI() {
     document.getElementById('data-display').innerText = Math.floor(gameState.data);
     document.getElementById('pop-display').innerText = `${gameState.colonists} / ${gameState.maxColonists}`;
     document.getElementById('ship-display').innerText = `${gameState.activeRoutes} / ${gameState.freighters}`;
-    
-    // NEW: Colony Capacity Counter
     document.getElementById('colony-display').innerText = `${gameState.planets.length} / ${gameState.maxPlanets}`;
-    
     document.getElementById('unassigned-display').innerText = gameState.colonists - gameState.planets.reduce((sum, p) => sum + p.assignedWorkers, 0);
 
     document.getElementById('btn-scan').innerText = `[ EXECUTE_SCAN ] (${gameState.scanCost} ENERGY)`;
@@ -230,10 +252,14 @@ function renderPlanets() {
         const labCost = 50 + (planet.modules.lab * 15);
         const habCost = 30 + (planet.modules.hab * 15);
 
+        // Check if eligible for specialization (at least 5 total modules)
+        const totalModCount = planet.modules.extractor + planet.modules.solarArray + planet.modules.lab + planet.modules.hab;
+        const canSpecialize = totalModCount >= 5 && planet.specialization === "NONE";
+
         card.innerHTML = `
             <div style="display: flex; justify-content: space-between;">
                 <strong>DESIGNATION: ${planet.name}</strong>
-                <span style="color: #00ff41;">[${planet.type.toUpperCase()}]</span>
+                <span style="color: #00ff41;">[${planet.specialization !== "NONE" ? planet.specialization : planet.type.toUpperCase()}]</span>
             </div>
             <div style="font-size: 10px; color: #555;">${biome.desc}</div>
             <div style="font-size: 10px; color: #888;">WORKERS: ${planet.assignedWorkers} | DRAIN: x${biome.oxygenCost}</div>
@@ -254,6 +280,15 @@ function renderPlanets() {
                 <button onclick="buildModule('${planet.id}', 'lab')">LAB [${planet.modules.lab}] (${labCost}S)</button>
                 <button onclick="buildModule('${planet.id}', 'hab')">HAB [${planet.modules.hab}] (${habCost}S)</button>
             </div>
+
+            ${canSpecialize ? `
+                <div style="margin-top: 10px; border: 1px dashed #00ff41; padding: 5px; text-align: center;">
+                    <div style="font-size: 10px; margin-bottom: 5px;">RECONFIGURE_COLONY_TYPE (COST: 250 DATA)</div>
+                    <button onclick="specializePlanet('${planet.id}', 'FORGE')">FORGE</button>
+                    <button onclick="specializePlanet('${planet.id}', 'POWER')">POWER</button>
+                    <button onclick="specializePlanet('${planet.id}', 'ARCHIVE')">ARCHIVE</button>
+                </div>
+            ` : ''}
         `;
         list.appendChild(card);
     });
