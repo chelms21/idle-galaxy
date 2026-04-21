@@ -56,16 +56,18 @@
 <div id="ui-container">
     <div class="stats-bar">
         <div>ENERGY: <span id="energy-display">100</span></div>
-        <div>SCRAP: <span id="scrap-display">0</span></div>
+        <div>SCRAP: <span id="scrap-display">20</span></div>
         <div>DATA: <span id="data-display">0</span></div>
         <div>POP: <span id="pop-display">0 / 5</span></div>
+        <div>SHIPS: <span id="ship-display">0 / 0</span></div>
     </div>
 
     <div id="controls" style="margin-bottom: 20px;">
-        <button onclick="manualScrap()" style="background: #00ff41; color: #000; font-weight: bold;">[ SCRAP_WRECKAGE ] (+1 Scrap)</button>
+        <button onclick="manualScrap()" style="background: #00ff41; color: #000; font-weight: bold;">[ SCRAP_WRECKAGE ]</button>
         <button onclick="manualScan()">[ EXECUTE_SCAN ]</button>
         <button onclick="upgradeCommand()">[ EXPAND_COMMAND ]</button>
         <button onclick="recruitColonist()">[ RECRUIT_COLONIST ]</button>
+        <button onclick="buildFreighter()">[ CONSTRUCT_FREIGHTER ]</button>
         <div style="font-size: 12px; margin-top: 5px;">UNASSIGNED_WORKERS: <span id="unassigned-display">0</span></div>
     </div>
 
