@@ -146,29 +146,6 @@ function loadFromLocal() {
     }
 }
 
-function exportSave() {
-    const saveString = btoa(JSON.stringify(gameState));
-    window.prompt("COPY_SAVE_STRING_FOR_TRANSFER:", saveString);
-}
-
-function importSave() {
-    const saveString = window.prompt("PASTE_SAVE_STRING:");
-    if (saveString) {
-        try {
-            gameState = JSON.parse(atob(saveString));
-            saveToLocal();
-            location.reload();
-        } catch (e) { alert("ERROR: INVALID_SAVE_STRING."); }
-    }
-}
-
-// --- LOGGING ---
-function logMessage(msg) {
-    gameState.eventLog.unshift(`[${new Date().toLocaleTimeString()}] ${msg}`);
-    if (gameState.eventLog.length > 8) gameState.eventLog.pop();
-    renderLog();
-}
-
 // --- CORE ACTIONS ---
 
 function manualScrap() {
@@ -201,10 +178,11 @@ function createNewSector() {
     const types = Object.keys(SECTOR_TYPES);
     const type = types[Math.floor(Math.random() * types.length)];
     const id = "SEC-" + Math.floor(Math.random() * 99);
-    gameState.sectors.push({ id, type, planets: [] });
+    // NEW: Initialize assignedFreighters
+    gameState.sectors.push({ id, type, planets: [], assignedFreighters: 0 });
     logMessage(`SYSTEM: ENTERED ${id} (${type}).`);
     discoverPlanet(id);
-    gameState.selectedSector = id; // Focus new sector
+    gameState.selectedSector = id; 
 }
 
 function discoverPlanet(sectorId) {
@@ -213,7 +191,6 @@ function discoverPlanet(sectorId) {
     const type = types[Math.floor(Math.random() * types.length)];
     const name = `${PREFIXES[Math.floor(Math.random() * PREFIXES.length)]}-${Math.floor(Math.random() * 999)}`;
     
-    // 30% chance for a unique trait
     let traits = [];
     if (Math.random() < 0.3) {
         const traitKeys = Object.keys(PLANET_TRAITS);
@@ -254,6 +231,25 @@ function buildFreighter() {
         logMessage("INFO: FREIGHTER_CONSTRUCTION_COMPLETE.");
         updateUI();
     }
+}
+
+// NEW: Fleet Management Logic
+function manageSectorFleet(amount) {
+    if (!gameState.selectedSector) return;
+    const sector = gameState.sectors.find(s => s.id === gameState.selectedSector);
+    
+    const totalAssigned = gameState.sectors.reduce((sum, s) => sum + (s.assignedFreighters || 0), 0);
+    const available = gameState.freighters - totalAssigned;
+
+    if (amount > 0 && available > 0) {
+        sector.assignedFreighters = (sector.assignedFreighters || 0) + 1;
+    } else if (amount < 0 && sector.assignedFreighters > 0) {
+        sector.assignedFreighters--;
+    } else {
+        logMessage("FLEET_COMMAND: INVALID_TRANSFER_REQUEST.");
+    }
+    renderPlanets();
+    updateConsole();
 }
 
 function upgradeCommand() {
@@ -321,7 +317,7 @@ function toggleTrade(planetId) {
 function buyUpgrade(techKey) {
     const tech = TECH_TREE[techKey];
     
-    const isUnlocked = !tech.requires || (gameState.upgrades[tech.requires.toLowerCase()] || gameState.upgrades.cryoPipes); // Simplified check for your current state keys
+    const isUnlocked = !tech.requires || (gameState.upgrades[tech.requires.toLowerCase()] || gameState.upgrades.cryoPipes); 
 
     if (gameState.data >= tech.cost) {
         gameState.data -= tech.cost;
@@ -374,12 +370,19 @@ function gameLoop() {
         const spec = SPECIALIZATIONS[planet.specialization];
         
         let sectorMod = { scrap: 1, energy: 1, data: 1 };
+        let logisticsBonus = 1.0;
+        let fleetDrain = 0;
+
         if (planet.sectorId) {
             const sector = gameState.sectors.find(s => s.id === planet.sectorId);
-            if (sector) sectorMod = SECTOR_TYPES[sector.type];
+            if (sector) {
+                sectorMod = SECTOR_TYPES[sector.type];
+                // NEW: Apply Logistics Bonus
+                logisticsBonus = 1 + ((sector.assignedFreighters || 0) * 0.1);
+                fleetDrain = ((sector.assignedFreighters || 0) * 0.05) / 10;
+            }
         }
 
-        // Apply Trait Modifiers
         const traitMod = (planet.traits || []).reduce((acc, t) => { 
             const mod = PLANET_TRAITS[t];
             return { 
@@ -389,30 +392,28 @@ function gameLoop() {
             };
         }, { scrap: 1, energy: 1, data: 1 });
 
-        // Instability: Diminishing returns on over-extraction
         let instability = (planet.modules.extractor > 8) ? 0.7 : 1.0;
 
         const totalModules = planet.modules.extractor + planet.modules.solarArray + planet.modules.lab;
         let effectiveness = totalModules > 0 ? Math.min(1, 0.1 + (planet.assignedWorkers / totalModules)) : 0.1;
 
-        // Production Math
+        // NEW: Production with Logistics Bonus
         let dBonus = 1 + (gameState.upgrades.advancedDrills * 0.1);
-        let sProd = (planet.modules.extractor * 0.25 * biome.scrap * dBonus * spec.scrap * sectorMod.scrap * traitMod.scrap * instability * effectiveness / 10);
+        let sProd = (planet.modules.extractor * 0.25 * biome.scrap * dBonus * spec.scrap * sectorMod.scrap * traitMod.scrap * instability * effectiveness * logisticsBonus / 10);
         
         let cBonus = (planet.type === "Frozen" && gameState.upgrades.cryoPipes) ? 2.5 : 1;
-        let eProd = (planet.modules.solarArray * 0.4 * biome.energy * cBonus * spec.energy * sectorMod.energy * traitMod.energy * effectiveness / 10);
+        let eProd = (planet.modules.solarArray * 0.4 * biome.energy * cBonus * spec.energy * sectorMod.energy * traitMod.energy * effectiveness * logisticsBonus / 10);
         if (gameState.megaStage >= 3) eProd *= 100;
         
-        let dProd = (planet.modules.lab * 0.1 * spec.data * sectorMod.data * traitMod.data * effectiveness / 10);
+        let dProd = (planet.modules.lab * 0.1 * spec.data * sectorMod.data * traitMod.data * effectiveness * logisticsBonus / 10);
 
-        // Drain Math
         let drainMult = (gameState.megaStage < 3 && gameState.megaProgress > 0) ? 1.25 : 1.0; 
         let eDrain = 0;
         if (planet.assignedWorkers > 0) eDrain += (planet.assignedWorkers * 0.1 * biome.oxygenCost * drainMult / 10);
         if (planet.isExporting) eDrain += (0.2 * drainMult / 10); 
 
         tickScrap += sProd;
-        tickEnergy += (eProd - eDrain);
+        tickEnergy += (eProd - (eDrain + fleetDrain));
         tickData += dProd;
     });
 
@@ -424,7 +425,6 @@ function gameLoop() {
     gameState.rates.energy = tickEnergy * 10;
     gameState.rates.data = tickData * 10;
 
-    // Trigger Random Events (0.1% chance per tick)
     if (Math.random() < 0.001) triggerRandomEvent();
     if (Math.random() < 0.01) saveToLocal();
 
@@ -436,8 +436,10 @@ function gameLoop() {
 function updateUI() {
     const formatRate = (val) => (val >= 0 ? `+${val.toFixed(1)}` : `${val.toFixed(1)}`);
     const eDisplay = document.getElementById('energy-display');
-    eDisplay.innerText = `${Math.floor(gameState.energy)} (${formatRate(gameState.rates.energy)}/s)`;
-    eDisplay.style.color = gameState.rates.energy < 0 ? "#ff4444" : "#00ff41";
+    if(eDisplay) {
+        eDisplay.innerText = `${Math.floor(gameState.energy)} (${formatRate(gameState.rates.energy)}/s)`;
+        eDisplay.style.color = gameState.rates.energy < 0 ? "#ff4444" : "#00ff41";
+    }
 
     document.getElementById('scrap-display').innerText = `${Math.floor(gameState.scrap)} (${formatRate(gameState.rates.scrap)}/s)`;
     document.getElementById('data-display').innerText = `${Math.floor(gameState.data)} (${formatRate(gameState.rates.data)}/s)`;
@@ -512,7 +514,25 @@ function updateConsole() {
     const sector = gameState.sectors.find(s => s.id === gameState.selectedSector);
     const sM = SECTOR_TYPES[sector.type];
 
-    sectorView.innerHTML = `<strong style="color:${sM.color}; font-size: 14px;">${sector.id}</strong><br>TYPE: ${sector.type}<br>${sM.desc}<br><br><strong>AVAILABLE_NODES:</strong><br>`;
+    const totalAssigned = gameState.sectors.reduce((sum, s) => sum + (s.assignedFreighters || 0), 0);
+    const available = gameState.freighters - totalAssigned;
+
+    // NEW: Sector View with Fleet Controls
+    sectorView.innerHTML = `
+        <strong style="color:${sM.color}; font-size: 14px;">${sector.id}</strong><br>
+        TYPE: ${sector.type}<br>
+        ${sM.desc}<br><br>
+        
+        <div style="border: 1px solid #333; padding: 5px; margin-bottom: 10px;">
+            <strong>FLEET_LOGISTICS:</strong><br>
+            STATIONED: ${sector.assignedFreighters || 0}<br>
+            AVAILABLE: ${available}<br>
+            <button onclick="manageSectorFleet(1)">+ DEPLOY</button>
+            <button onclick="manageSectorFleet(-1)">- RECALL</button>
+        </div>
+
+        <strong>AVAILABLE_NODES:</strong><br>
+    `;
 
     gameState.planets.filter(p => p.sectorId === sector.id).forEach(p => {
         const pBtn = document.createElement('button');
@@ -535,7 +555,7 @@ function updateConsole() {
     const p = gameState.planets.find(p => p.id === gameState.selectedPlanet);
     const b = BIOMES[p.type];
     const totalMod = p.modules.extractor + p.modules.solarArray + p.modules.lab + p.modules.hab;
-    const traitHTML = p.traits.map(t => `<span style="color:#ffaa00; border:1px solid #ffaa00; padding:2px; font-size:9px; margin-right:5px;" title="${PLANET_TRAITS[t].desc}">${t}</span>`).join('');
+    const traitHTML = (p.traits || []).map(t => `<span style="color:#ffaa00; border:1px solid #ffaa00; padding:2px; font-size:9px; margin-right:5px;" title="${PLANET_TRAITS[t].desc}">${t}</span>`).join('');
 
     planetView.innerHTML = `
         <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding-bottom: 5px;">
@@ -572,7 +592,10 @@ function updateConsole() {
     `;
 }
 
-function renderLog() { document.getElementById('event-log').innerHTML = gameState.eventLog.join('<br>'); }
+function renderLog() { 
+    const log = document.getElementById('event-log');
+    if(log) log.innerHTML = gameState.eventLog.join('<br>'); 
+}
 
 function renderResearch() {
     const res = document.getElementById('research-list');
@@ -585,7 +608,6 @@ function renderResearch() {
                          (key === 'SIGNAL_BOOSTERS' && gameState.upgrades.signalBoosters > 0) ||
                          (key === 'ADVANCED_DRILLS' && gameState.upgrades.advancedDrills > 0);
         
-        // Determine if it should be visible
         const canSee = !tech.requires || 
                        (tech.requires === 'SIGNAL_BOOSTERS' && gameState.upgrades.signalBoosters > 0) ||
                        (tech.requires === 'CRYO_PIPES' && gameState.upgrades.cryoPipes);
@@ -610,10 +632,15 @@ function renderResearch() {
         }
     });
 
-    // If no new tech is visible
     if (res.innerHTML === '') {
         res.innerHTML = '<div style="color:#444; font-size:10px;">NO_ACTIVE_RESEARCH_NODES_FOUND.</div>';
     }
+}
+
+function logMessage(msg) {
+    gameState.eventLog.unshift(`[${new Date().toLocaleTimeString()}] ${msg}`);
+    if (gameState.eventLog.length > 8) gameState.eventLog.pop();
+    renderLog();
 }
 
 window.onload = () => {
