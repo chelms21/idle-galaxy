@@ -33,6 +33,12 @@ const SECTOR_TYPES = {
     "STELLAR_FORGE": { scrap: 0.5, energy: 2.0, data: 1.0, color: "#f00", desc: "High solar radiation (+Energy, -Scrap)." }
 };
 
+const PLANET_TRAITS = {
+    "RICH_CORE": { scrap: 1.5, energy: 1, data: 1, desc: "High-density mineral deposits (+50% Scrap)" },
+    "ANCIENT_RUINS": { scrap: 1, energy: 1, data: 2.0, desc: "Xeno-tech signatures detected (+100% Data)" },
+    "UNSTABLE": { scrap: 1.2, energy: 0.8, data: 1, desc: "Volatile geology (+Scrap, -Energy)" }
+};
+
 const MEGA_STAGES = [
     { name: "SATELLITE_ARRAY", scrap: 1000, data: 500, energy: 500, desc: "Deploying primary solar collection net." },
     { name: "THERMAL_COLLECTORS", scrap: 5000, data: 2500, energy: 2000, desc: "Installing high-heat absorption panels." },
@@ -98,7 +104,6 @@ function loadFromLocal() {
         try {
             gameState = JSON.parse(savedData);
             if (!gameState.sectors) gameState.sectors = [];
-            // Accessibility Patch: Ensure rates exist in old saves
             if (!gameState.rates) gameState.rates = { scrap: 0, energy: 0, data: 0 };
             
             logMessage("SYSTEM: LOCAL_DATA_RESTORED.");
@@ -168,6 +173,7 @@ function createNewSector() {
     gameState.sectors.push({ id, type, planets: [] });
     logMessage(`SYSTEM: ENTERED ${id} (${type}).`);
     discoverPlanet(id);
+    gameState.selectedSector = id; // Focus new sector
 }
 
 function discoverPlanet(sectorId) {
@@ -176,8 +182,15 @@ function discoverPlanet(sectorId) {
     const type = types[Math.floor(Math.random() * types.length)];
     const name = `${PREFIXES[Math.floor(Math.random() * PREFIXES.length)]}-${Math.floor(Math.random() * 999)}`;
     
+    // 30% chance for a unique trait
+    let traits = [];
+    if (Math.random() < 0.3) {
+        const traitKeys = Object.keys(PLANET_TRAITS);
+        traits.push(traitKeys[Math.floor(Math.random() * traitKeys.length)]);
+    }
+
     gameState.planets.push({
-        id, name, type, sectorId, 
+        id, name, type, sectorId, traits,
         assignedWorkers: 0, isExporting: false,
         specialization: "NONE",
         modules: { extractor: 0, solarArray: 0, lab: 0, hab: 0 }
@@ -286,11 +299,38 @@ function buyUpgrade(techType) {
     }
 }
 
+// --- EVENT SYSTEM ---
+
+function triggerRandomEvent() {
+    const events = [
+        { 
+            name: "SOLAR_FLARE", 
+            msg: "CRITICAL: SOLAR_FLARE_DETECTED. ENERGY_OUTPUT_HALVED.",
+            action: () => { gameState.energy *= 0.9; }
+        },
+        { 
+            name: "DATA_LEAK", 
+            msg: "SIGNAL_FOUND: INTERCEPTED_ANCIENT_PROBE. +200_DATA.",
+            action: () => { gameState.data += 200; }
+        },
+        { 
+            name: "EQUIPMENT_FAILURE", 
+            msg: "ALERT: SYSTEM_GLITCH_IN_SECTOR. -50_SCRAP.",
+            action: () => { gameState.scrap = Math.max(0, gameState.scrap - 50); }
+        }
+    ];
+
+    const ev = events[Math.floor(Math.random() * events.length)];
+    logMessage(ev.msg);
+    ev.action();
+    updateUI();
+}
+
 // --- MAIN LOOP ---
 
 function gameLoop() {
     let tickScrap = 0;
-    let tickEnergy = 0.05; // Base gain
+    let tickEnergy = 0.05; 
     let tickData = 0;
 
     gameState.planets.forEach(planet => {
@@ -303,18 +343,27 @@ function gameLoop() {
             if (sector) sectorMod = SECTOR_TYPES[sector.type];
         }
 
+        // Apply Trait Modifiers
+        const traitMod = planet.traits.reduce((acc, t) => {
+            const mod = PLANET_TRAITS[t];
+            return { scrap: acc.scrap * mod.scrap, energy: acc.energy * mod.energy, data: acc.data * mod.data };
+        }, { scrap: 1, energy: 1, data: 1 });
+
+        // Instability: Diminishing returns on over-extraction
+        let instability = (planet.modules.extractor > 8) ? 0.7 : 1.0;
+
         const totalModules = planet.modules.extractor + planet.modules.solarArray + planet.modules.lab;
         let effectiveness = totalModules > 0 ? Math.min(1, 0.1 + (planet.assignedWorkers / totalModules)) : 0.1;
 
         // Production Math
         let dBonus = 1 + (gameState.upgrades.advancedDrills * 0.1);
-        let sProd = (planet.modules.extractor * 0.25 * biome.scrap * dBonus * spec.scrap * sectorMod.scrap * effectiveness / 10);
+        let sProd = (planet.modules.extractor * 0.25 * biome.scrap * dBonus * spec.scrap * sectorMod.scrap * traitMod.scrap * instability * effectiveness / 10);
         
         let cBonus = (planet.type === "Frozen" && gameState.upgrades.cryoPipes) ? 2.5 : 1;
-        let eProd = (planet.modules.solarArray * 0.4 * biome.energy * cBonus * spec.energy * sectorMod.energy * effectiveness / 10);
+        let eProd = (planet.modules.solarArray * 0.4 * biome.energy * cBonus * spec.energy * sectorMod.energy * traitMod.energy * effectiveness / 10);
         if (gameState.megaStage >= 3) eProd *= 100;
         
-        let dProd = (planet.modules.lab * 0.1 * spec.data * sectorMod.data * effectiveness / 10);
+        let dProd = (planet.modules.lab * 0.1 * spec.data * sectorMod.data * traitMod.data * effectiveness / 10);
 
         // Drain Math
         let drainMult = (gameState.megaStage < 3 && gameState.megaProgress > 0) ? 1.25 : 1.0; 
@@ -322,22 +371,21 @@ function gameLoop() {
         if (planet.assignedWorkers > 0) eDrain += (planet.assignedWorkers * 0.1 * biome.oxygenCost * drainMult / 10);
         if (planet.isExporting) eDrain += (0.2 * drainMult / 10); 
 
-        // Update Tick Production
         tickScrap += sProd;
         tickEnergy += (eProd - eDrain);
         tickData += dProd;
     });
 
-    // Apply to resources
     gameState.scrap += tickScrap;
     gameState.energy += tickEnergy;
     gameState.data += tickData;
 
-    // Calculate per second rates (loop is 100ms, so multiply by 10)
     gameState.rates.scrap = tickScrap * 10;
     gameState.rates.energy = tickEnergy * 10;
     gameState.rates.data = tickData * 10;
 
+    // Trigger Random Events (0.1% chance per tick)
+    if (Math.random() < 0.001) triggerRandomEvent();
     if (Math.random() < 0.01) saveToLocal();
 
     updateUI();
@@ -347,8 +395,6 @@ function gameLoop() {
 
 function updateUI() {
     const formatRate = (val) => (val >= 0 ? `+${val.toFixed(1)}` : `${val.toFixed(1)}`);
-
-    // Energy display with red warning color if rate is negative
     const eDisplay = document.getElementById('energy-display');
     eDisplay.innerText = `${Math.floor(gameState.energy)} (${formatRate(gameState.rates.energy)}/s)`;
     eDisplay.style.color = gameState.rates.energy < 0 ? "#ff4444" : "#00ff41";
@@ -389,7 +435,6 @@ function renderMega() {
     `;
 }
 
-// 1. THE MAP: Renders the high-level sector nodes
 function renderPlanets() {
     const grid = document.getElementById('map-grid');
     grid.innerHTML = '';
@@ -405,17 +450,12 @@ function renderPlanets() {
         node.style.cssText = `
             width: 120px; height: 60px; border: 1px solid ${sM.color}; 
             background: ${gameState.selectedSector === s.id ? sM.color + '33' : '#111'};
-            padding: 5px; cursor: pointer; text-align: center; font-size: 10px;
-            transition: 0.2s;
+            padding: 5px; cursor: pointer; text-align: center; font-size: 10px; transition: 0.2s;
         `;
-        node.innerHTML = `
-            <strong style="color:${sM.color}">${s.id}</strong><br>
-            <span style="color:#666">${s.type}</span><br>
-            <span style="color:#fff">${s.planets.length} NODES</span>
-        `;
+        node.innerHTML = `<strong style="color:${sM.color}">${s.id}</strong><br><span style="color:#666">${s.type}</span><br><span style="color:#fff">${s.planets.length} NODES</span>`;
         node.onclick = () => {
             gameState.selectedSector = s.id;
-            gameState.selectedPlanet = null; // Reset planet focus when changing sectors
+            gameState.selectedPlanet = null;
             renderPlanets();
             updateConsole();
         };
@@ -424,25 +464,16 @@ function renderPlanets() {
     updateConsole();
 }
 
-// 2. THE CONSOLE: Updates the "Bottom Drawer" based on selection
 function updateConsole() {
     const sectorView = document.getElementById('selected-sector-view');
     const planetView = document.getElementById('selected-planet-view');
-
     if (!gameState.selectedSector) return;
 
     const sector = gameState.sectors.find(s => s.id === gameState.selectedSector);
     const sM = SECTOR_TYPES[sector.type];
 
-    // Update Sector Info Panel
-    sectorView.innerHTML = `
-        <strong style="color:${sM.color}; font-size: 14px;">${sector.id}</strong><br>
-        TYPE: ${sector.type}<br>
-        ${sM.desc}<br><br>
-        <strong>AVAILABLE_NODES:</strong><br>
-    `;
+    sectorView.innerHTML = `<strong style="color:${sM.color}; font-size: 14px;">${sector.id}</strong><br>TYPE: ${sector.type}<br>${sM.desc}<br><br><strong>AVAILABLE_NODES:</strong><br>`;
 
-    // Add clickable planet list to the Sector panel
     gameState.planets.filter(p => p.sectorId === sector.id).forEach(p => {
         const pBtn = document.createElement('button');
         pBtn.style.width = "100%";
@@ -456,7 +487,6 @@ function updateConsole() {
         sectorView.appendChild(pBtn);
     });
 
-    // Update Planet Detail Panel
     if (!gameState.selectedPlanet) {
         planetView.innerHTML = `<div style="color:#444; margin-top:20px;">SELECT_PLANETARY_NODE_FOR_UPLINK...</div>`;
         return;
@@ -465,12 +495,14 @@ function updateConsole() {
     const p = gameState.planets.find(p => p.id === gameState.selectedPlanet);
     const b = BIOMES[p.type];
     const totalMod = p.modules.extractor + p.modules.solarArray + p.modules.lab + p.modules.hab;
+    const traitHTML = p.traits.map(t => `<span style="color:#ffaa00; border:1px solid #ffaa00; padding:2px; font-size:9px; margin-right:5px;" title="${PLANET_TRAITS[t].desc}">${t}</span>`).join('');
 
     planetView.innerHTML = `
         <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding-bottom: 5px;">
             <strong style="font-size: 16px;">NODE: ${p.name} [${p.type.toUpperCase()}]</strong>
-            <span style="color: #00ff41;">SPEC: ${p.specialization}</span>
+            <div>${traitHTML} <span style="color: #00ff41;">SPEC: ${p.specialization}</span></div>
         </div>
+        ${p.modules.extractor > 8 ? `<div style="color:#ff4444; font-size:10px; margin-top:5px; animation: blink 1s infinite;">!!! INSTABILITY_DETECTED: EFFICIENCY_PENALTY_ACTIVE !!!</div>` : ''}
         
         <div style="display: flex; gap: 40px; margin-top: 15px;">
             <div style="width: 200px;">
@@ -480,7 +512,6 @@ function updateConsole() {
                 <div style="margin-top: 10px;">ASSIGNED: ${p.assignedWorkers}</div>
                 <div style="font-size: 9px; color: #555;">ENVIRONMENT_DRAIN: x${b.oxygenCost}</div>
             </div>
-
             <div style="flex-grow: 1;">
                 <div style="font-size: 11px; color: #888; margin-bottom: 10px;">MODULE_CONSTRUCTION</div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
@@ -490,20 +521,12 @@ function updateConsole() {
                     <button onclick="buildModule('${p.id}', 'hab')">HAB [${p.modules.hab}] (${30 + p.modules.hab * 15}S)</button>
                 </div>
             </div>
-
             <div style="width: 180px;">
                 <div style="font-size: 11px; color: #888; margin-bottom: 10px;">LOGISTICS</div>
                 <button onclick="toggleTrade('${p.id}')" style="width: 100%; background: ${p.isExporting ? '#00ff41' : 'transparent'}; color: ${p.isExporting ? '#000' : '#00ff41'}">
                     ${p.isExporting ? '[EXPORT_ACTIVE]' : '[ESTABLISH_TRADE]'}
                 </button>
-                
-                ${totalMod >= 5 && p.specialization === "NONE" ? `
-                    <div class="spec-box" style="margin-top:10px;">
-                        <button onclick="specializePlanet('${p.id}', 'FORGE')">FORGE</button>
-                        <button onclick="specializePlanet('${p.id}', 'POWER')">POWER</button>
-                        <button onclick="specializePlanet('${p.id}', 'ARCHIVE')">ARCHIVE</button>
-                    </div>
-                ` : ''}
+                ${totalMod >= 5 && p.specialization === "NONE" ? `<div class="spec-box" style="margin-top:10px;"><button onclick="specializePlanet('${p.id}', 'FORGE')">FORGE</button><button onclick="specializePlanet('${p.id}', 'POWER')">POWER</button><button onclick="specializePlanet('${p.id}', 'ARCHIVE')">ARCHIVE</button></div>` : ''}
             </div>
         </div>
     `;
