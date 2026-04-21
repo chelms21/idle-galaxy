@@ -31,7 +31,6 @@ const BIOMES = {
 const PREFIXES = ["Nova", "Sector", "Exo", "Prime", "Void", "Krypton", "Zenith"];
 
 // --- UTILITY ---
-
 function logMessage(msg) {
     gameState.eventLog.unshift(`[${new Date().toLocaleTimeString()}] ${msg}`);
     if (gameState.eventLog.length > 8) gameState.eventLog.pop();
@@ -39,7 +38,6 @@ function logMessage(msg) {
 }
 
 // --- CORE FUNCTIONS ---
-
 function manualScrap() {
     gameState.scrap += 1;
     updateUI();
@@ -47,7 +45,7 @@ function manualScrap() {
 
 function manualScan() {
     if (gameState.planets.length >= gameState.maxPlanets) {
-        logMessage("CRITICAL: COMMAND_CAPACITY_REACHED. EXPAND COMMAND CENTER.");
+        logMessage("CRITICAL: COMMAND_CAPACITY_REACHED.");
         return;
     }
     if (gameState.energy >= gameState.scanCost) {
@@ -65,7 +63,7 @@ function recruitColonist() {
     if (gameState.scrap >= cost && gameState.colonists < gameState.maxColonists) {
         gameState.scrap -= cost;
         gameState.colonists++;
-        logMessage("INFO: NEW_COLONIST_ARRIVED_VIA_DROP_POD.");
+        logMessage("INFO: NEW_COLONIST_ARRIVED.");
         updateUI();
     }
 }
@@ -85,7 +83,7 @@ function upgradeCommand() {
     if (gameState.scrap >= cost) {
         gameState.scrap -= cost;
         gameState.maxPlanets++;
-        logMessage("UPGRADE: COMMAND_CENTER_EXPANDED. GALAXY_MAP_UPDATED.");
+        logMessage("UPGRADE: COMMAND_CENTER_EXPANDED.");
         updateUI();
     }
 }
@@ -116,7 +114,7 @@ function toggleTrade(planetId) {
             planet.isExporting = true;
             gameState.activeRoutes++;
         } else {
-            logMessage("ALERT: NO_AVAILABLE_FREIGHTERS_IN_DOCK.");
+            logMessage("ALERT: NO_AVAILABLE_FREIGHTERS.");
         }
     } else {
         planet.isExporting = false;
@@ -152,18 +150,16 @@ function assignWorker(planetId, amount) {
     updateUI();
 }
 
-// --- ENGINE & ANOMALIES ---
+function buyUpgrade(techType) {
+    const costs = { cryoPipes: 50, advancedDrills: 100, signalBoosters: 75 };
+    const cost = costs[techType] + (techType !== 'cryoPipes' ? gameState.upgrades[techType] * 50 : 0);
 
-function checkForAnomalies() {
-    if (Math.random() < 0.005) { 
-        const events = [
-            { name: "SPACE_DEBRIS", effect: () => { gameState.scrap += 50; return "SALVAGED_50_SCRAP_FROM_WRECKAGE"; }},
-            { name: "SOLAR_FLARE", effect: () => { gameState.energy = Math.max(0, gameState.energy - 30); return "CRITICAL_ENERGY_DRAIN_DETECTED"; }},
-            { name: "DATA_LEAK", effect: () => { gameState.data += 15; return "SIGNAL_INTERCEPTED: +15_RESEARCH_DATA"; }}
-        ];
-        const event = events[Math.floor(Math.random() * events.length)];
-        const resultMsg = event.effect();
-        logMessage(`ANOMALY: ${event.name} - ${resultMsg}`);
+    if (gameState.data >= cost) {
+        gameState.data -= cost;
+        if (techType === 'cryoPipes') gameState.upgrades.cryoPipes = true;
+        else gameState.upgrades[techType]++;
+        renderResearch();
+        updateUI();
     }
 }
 
@@ -186,7 +182,18 @@ function gameLoop() {
     });
 
     gameState.energy += 0.05; 
-    checkForAnomalies();
+    
+    // Anomaly Check
+    if (Math.random() < 0.005) { 
+        const events = [
+            { name: "SPACE_DEBRIS", effect: () => { gameState.scrap += 50; return "SALVAGED_50_SCRAP_FROM_WRECKAGE"; }},
+            { name: "SOLAR_FLARE", effect: () => { gameState.energy = Math.max(0, gameState.energy - 30); return "CRITICAL_ENERGY_DRAIN"; }},
+            { name: "DATA_LEAK", effect: () => { gameState.data += 15; return "SIGNAL_INTERCEPTED: +15_DATA"; }}
+        ];
+        const event = events[Math.floor(Math.random() * events.length)];
+        logMessage(`ANOMALY: ${event.name} - ${event.effect()}`);
+    }
+
     updateUI();
 }
 
@@ -200,11 +207,10 @@ function updateUI() {
     document.getElementById('ship-display').innerText = `${gameState.activeRoutes} / ${gameState.freighters}`;
     document.getElementById('unassigned-display').innerText = gameState.colonists - gameState.planets.reduce((sum, p) => sum + p.assignedWorkers, 0);
 
-    // Noob-proof Labels & Prices
-    document.querySelector('button[onclick="manualScan()"]').innerText = `[ EXECUTE_SCAN ] (${gameState.scanCost} ENERGY)`;
-    document.querySelector('button[onclick="recruitColonist()"]').innerText = `[ RECRUIT_COLONIST ] (${20 + (gameState.colonists * 10)} SCRAP)`;
-    document.querySelector('button[onclick="buildFreighter()"]').innerText = `[ CONSTRUCT_FREIGHTER ] (${50 + (gameState.freighters * 25)} SCRAP)`;
-    document.querySelector('button[onclick="upgradeCommand()"]').innerText = `[ EXPAND_COMMAND_CENTER ] (${Math.pow(gameState.maxPlanets, 2) * 25} SCRAP)`;
+    document.getElementById('btn-scan').innerText = `[ EXECUTE_SCAN ] (${gameState.scanCost} ENERGY)`;
+    document.getElementById('btn-recruit').innerText = `[ RECRUIT_COLONIST ] (${20 + (gameState.colonists * 10)} SCRAP)`;
+    document.getElementById('btn-freighter').innerText = `[ CONSTRUCT_FREIGHTER ] (${50 + (gameState.freighters * 25)} SCRAP)`;
+    document.getElementById('btn-command').innerText = `[ EXPAND_COMMAND_CENTER ] (${Math.pow(gameState.maxPlanets, 2) * 25} SCRAP)`;
 }
 
 function renderPlanets() {
@@ -223,28 +229,26 @@ function renderPlanets() {
         card.innerHTML = `
             <div style="display: flex; justify-content: space-between;">
                 <strong>DESIGNATION: ${planet.name}</strong>
-                <span style="color: #00ff41;">[BIOME: ${planet.type.toUpperCase()}]</span>
+                <span style="color: #00ff41;">[${planet.type.toUpperCase()}]</span>
             </div>
-            <div style="font-size: 10px; color: #555;">ENVIRONMENT: ${biome.desc}</div>
-            <div style="font-size: 10px; color: #888;">WORKERS: ${planet.assignedWorkers} | LIFE_SUPPORT_DRAIN: x${biome.oxygenCost}</div>
+            <div style="font-size: 10px; color: #555;">${biome.desc}</div>
+            <div style="font-size: 10px; color: #888;">WORKERS: ${planet.assignedWorkers} | DRAIN: x${biome.oxygenCost}</div>
             
-            <div style="margin: 10px 0; display: flex; justify-content: space-between;">
+            <div style="margin: 8px 0; display: flex; justify-content: space-between;">
                 <div>
-                    <button onclick="assignWorker('${planet.id}', 1)">+ ASSIGN_WORKER</button>
-                    <button onclick="assignWorker('${planet.id}', -1)">- REMOVE_WORKER</button>
+                    <button onclick="assignWorker('${planet.id}', 1)">+ WORKER</button>
+                    <button onclick="assignWorker('${planet.id}', -1)">- WORKER</button>
                 </div>
                 <button onclick="toggleTrade('${planet.id}')" style="background: ${planet.isExporting ? '#00ff41' : 'transparent'}; color: ${planet.isExporting ? '#000' : '#00ff41'}">
-                    ${planet.isExporting ? '[EXPORT_ACTIVE]' : '[ESTABLISH_TRADE_ROUTE]'}
+                    ${planet.isExporting ? '[EXPORTING]' : '[IDLE_TRADE]'}
                 </button>
             </div>
 
-            <hr border="1" color="#222">
-            
-            <div style="margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-                <button onclick="buildModule('${planet.id}', 'extractor')">RESOURCE_EXTRACTOR [${planet.modules.extractor}] (${extCost} SCRAP)</button>
-                <button onclick="buildModule('${planet.id}', 'solarArray')">SOLAR_ARRAY [${planet.modules.solarArray}] (${solCost} SCRAP)</button>
-                <button onclick="buildModule('${planet.id}', 'lab')">RESEARCH_LAB [${planet.modules.lab}] (${labCost} SCRAP)</button>
-                <button onclick="buildModule('${planet.id}', 'hab')">HABITATION_UNIT [${planet.modules.hab}] (${habCost} SCRAP)</button>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                <button onclick="buildModule('${planet.id}', 'extractor')">EXTRACTOR [${planet.modules.extractor}] (${extCost}S)</button>
+                <button onclick="buildModule('${planet.id}', 'solarArray')">SOLAR [${planet.modules.solarArray}] (${solCost}S)</button>
+                <button onclick="buildModule('${planet.id}', 'lab')">LAB [${planet.modules.lab}] (${labCost}S)</button>
+                <button onclick="buildModule('${planet.id}', 'hab')">HAB [${planet.modules.hab}] (${habCost}S)</button>
             </div>
         `;
         list.appendChild(card);
@@ -260,9 +264,9 @@ function renderResearch() {
     const container = document.getElementById('research-list');
     if(!container) return;
     container.innerHTML = `
-        <button onclick="buyUpgrade('cryoPipes')" ${gameState.upgrades.cryoPipes ? 'disabled' : ''}>CRYO_PIPES (50 DATA) - Boost Solar on Frozen worlds</button>
-        <button onclick="buyUpgrade('advancedDrills')">ADVANCED_DRILLS (${100 + gameState.upgrades.advancedDrills * 50} DATA) - +10% Scrap output</button>
-        <button onclick="buyUpgrade('signalBoosters')">SIGNAL_BOOSTERS (${75 + gameState.upgrades.signalBoosters * 50} DATA) - Reduce Scanning cost</button>
+        <button onclick="buyUpgrade('cryoPipes')" ${gameState.upgrades.cryoPipes ? 'disabled' : ''}>CRYO_PIPES (50 DATA)</button>
+        <button onclick="buyUpgrade('advancedDrills')">ADVANCED_DRILLS (${100 + gameState.upgrades.advancedDrills * 50} DATA)</button>
+        <button onclick="buyUpgrade('signalBoosters')">SIGNAL_BOOSTERS (${75 + gameState.upgrades.signalBoosters * 50} DATA)</button>
     `;
 }
 
