@@ -1,10 +1,12 @@
 // --- INITIAL GAME STATE ---
 let gameState = {
     energy: 100,
-    scrap: 10, 
+    scrap: 20, 
     data: 0,
     colonists: 0, 
     maxColonists: 5, 
+    freighters: 0, // New: Total ships
+    activeRoutes: 0, // New: Used ships
     planets: [],
     scanCost: 10,
     maxPlanets: 3,
@@ -19,7 +21,7 @@ let gameState = {
 // --- CONFIGURATION ---
 const BIOMES = {
     "Volcanic": { scrap: 0.8, energy: 1.5, oxygenCost: 1.5, desc: "High Thermal / Dangerous Air" },
-    "Frozen":   { scrap: 0.7, energy: 0.5, oxygenCost: 1.0, desc: "Low Solar / Thin Atmosphere" },
+    "Frozen":   { scrap: 0.7, energy: 0.5, oxygenCost: 1.0, desc: "Low Solar / Supercooled Circuits" },
     "Metallic": { scrap: 2.0, energy: 0.8, oxygenCost: 1.2, desc: "Rich Ores / Heavy Gravity" },
     "Gaseous":  { scrap: 0.2, energy: 1.2, oxygenCost: 2.0, desc: "Fuel Rich / Toxic Clouds" },
     "Desert":   { scrap: 1.1, energy: 2.0, oxygenCost: 0.8, desc: "Clear Skies / Dry Air" }
@@ -54,8 +56,15 @@ function recruitColonist() {
         gameState.scrap -= cost;
         gameState.colonists++;
         updateUI();
-    } else if (gameState.colonists >= gameState.maxColonists) {
-        alert("INSUFFICIENT_HABITATION: Build more Hab-Quarters.");
+    }
+}
+
+function buildFreighter() {
+    const cost = 50 + (gameState.freighters * 25);
+    if (gameState.scrap >= cost) {
+        gameState.scrap -= cost;
+        gameState.freighters++;
+        updateUI();
     }
 }
 
@@ -65,8 +74,6 @@ function upgradeCommand() {
         gameState.scrap -= cost;
         gameState.maxPlanets++;
         updateUI();
-    } else {
-        alert(`NEED ${cost} SCRAP TO EXPAND COMMAND.`);
     }
 }
 
@@ -81,6 +88,7 @@ function discoverPlanet() {
         name: name,
         type: type,
         assignedWorkers: 0,
+        isExporting: false, // New: Trade toggle
         modules: {
             extractor: 0,
             solarArray: 0,
@@ -93,6 +101,23 @@ function discoverPlanet() {
     renderPlanets();
 }
 
+function toggleTrade(planetId) {
+    const planet = gameState.planets.find(p => p.id === planetId);
+    if (!planet.isExporting) {
+        if (gameState.activeRoutes < gameState.freighters) {
+            planet.isExporting = true;
+            gameState.activeRoutes++;
+        } else {
+            alert("NO_AVAILABLE_FREIGHTERS.");
+        }
+    } else {
+        planet.isExporting = false;
+        gameState.activeRoutes--;
+    }
+    renderPlanets();
+    updateUI();
+}
+
 function buildModule(planetId, moduleType) {
     const planet = gameState.planets.find(p => p.id === planetId);
     let baseCost = (moduleType === 'lab') ? 50 : (moduleType === 'hab') ? 30 : 10;
@@ -101,11 +126,7 @@ function buildModule(planetId, moduleType) {
     if (gameState.scrap >= cost) {
         gameState.scrap -= cost;
         planet.modules[moduleType]++;
-        
-        if (moduleType === 'hab') {
-            gameState.maxColonists += 5;
-        }
-        
+        if (moduleType === 'hab') gameState.maxColonists += 5;
         renderPlanets();
         updateUI();
     }
@@ -114,7 +135,6 @@ function buildModule(planetId, moduleType) {
 function assignWorker(planetId, amount) {
     const planet = gameState.planets.find(p => p.id === planetId);
     const totalAssigned = gameState.planets.reduce((sum, p) => sum + p.assignedWorkers, 0);
-    
     if (amount > 0 && totalAssigned < gameState.colonists) {
         planet.assignedWorkers++;
     } else if (amount < 0 && planet.assignedWorkers > 0) {
@@ -145,18 +165,25 @@ function gameLoop() {
         let workerRatio = totalModules > 0 ? planet.assignedWorkers / totalModules : 0;
         const effectiveness = Math.min(1, 0.1 + workerRatio);
 
+        // Production
         let drillBonus = 1 + (gameState.upgrades.advancedDrills * 0.1);
         let scrapProd = (planet.modules.extractor * 0.25 * biome.scrap * drillBonus * effectiveness);
-        gameState.scrap += (scrapProd / 10);
-
         let cryoBonus = (planet.type === "Frozen" && gameState.upgrades.cryoPipes) ? 2.5 : 1;
         let energyProd = (planet.modules.solarArray * 0.4 * biome.energy * cryoBonus * effectiveness);
+        let dataProd = (planet.modules.lab * 0.1 * effectiveness);
+
+        // Export Logic: If exporting, resources go to pool. If not, they stay local (but currently pool is global).
+        // For simplicity in this step, exporting just costs Energy fuel.
+        gameState.scrap += (scrapProd / 10);
         gameState.energy += (energyProd / 10);
+        gameState.data += (dataProd / 10);
 
-        gameState.data += (planet.modules.lab * 0.1 * effectiveness / 10);
-
+        // Life Support & Trade Fuel
         if (planet.assignedWorkers > 0) {
             gameState.energy -= (planet.assignedWorkers * 0.1 * biome.oxygenCost / 10);
+        }
+        if (planet.isExporting) {
+            gameState.energy -= 0.2; // Fuel cost per route
         }
     });
 
@@ -171,17 +198,21 @@ function updateUI() {
     document.getElementById('scrap-display').innerText = Math.floor(gameState.scrap);
     document.getElementById('data-display').innerText = Math.floor(gameState.data);
     document.getElementById('pop-display').innerText = `${gameState.colonists} / ${gameState.maxColonists}`;
+    document.getElementById('ship-display').innerText = `${gameState.activeRoutes} / ${gameState.freighters}`;
     
     const unassigned = gameState.colonists - gameState.planets.reduce((sum, p) => sum + p.assignedWorkers, 0);
     document.getElementById('unassigned-display').innerText = unassigned;
 
-    // Update Manual Buttons with Prices
     const scanBtn = document.querySelector('button[onclick="manualScan()"]');
     if(scanBtn) scanBtn.innerText = `[ EXECUTE_SCAN ] (${gameState.scanCost} E)`;
 
     const recruitBtn = document.querySelector('button[onclick="recruitColonist()"]');
     const recruitCost = 20 + (gameState.colonists * 10);
     if(recruitBtn) recruitBtn.innerText = `[ RECRUIT_COLONIST ] (${recruitCost} S)`;
+
+    const shipBtn = document.querySelector('button[onclick="buildFreighter()"]');
+    const shipCost = 50 + (gameState.freighters * 25);
+    if(shipBtn) shipBtn.innerText = `[ CONSTRUCT_FREIGHTER ] (${shipCost} S)`;
 
     const commandBtn = document.querySelector('button[onclick="upgradeCommand()"]');
     const commandCost = Math.pow(gameState.maxPlanets, 2) * 25; 
@@ -196,8 +227,6 @@ function renderPlanets() {
         const biome = BIOMES[planet.type];
         const card = document.createElement('div');
         card.className = 'planet-card';
-        
-        // Dynamic costs for this specific planet
         const extCost = 10 + (planet.modules.extractor * 15);
         const solCost = 10 + (planet.modules.solarArray * 15);
         const labCost = 50 + (planet.modules.lab * 15);
@@ -209,14 +238,19 @@ function renderPlanets() {
                 <span style="color: #00ff41;">[${planet.type.toUpperCase()}]</span>
             </div>
             <div style="font-size: 10px; color: #555;">Workers: ${planet.assignedWorkers} | LS Cost: x${biome.oxygenCost}</div>
-            <div style="margin: 5px 0;">
-                <button onclick="assignWorker('${planet.id}', 1)">+ ASSIGN</button>
-                <button onclick="assignWorker('${planet.id}', -1)">- REMOVE</button>
+            <div style="margin: 5px 0; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <button onclick="assignWorker('${planet.id}', 1)">+W</button>
+                    <button onclick="assignWorker('${planet.id}', -1)">-W</button>
+                </div>
+                <button onclick="toggleTrade('${planet.id}')" style="background: ${planet.isExporting ? '#00ff41' : 'transparent'}; color: ${planet.isExporting ? '#000' : '#00ff41'}">
+                    ${planet.isExporting ? '[EXPORTING]' : '[IDLE_TRADE]'}
+                </button>
             </div>
             <hr border="1" color="#222">
             <div style="margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-                <button onclick="buildModule('${planet.id}', 'extractor')">EXTRACTOR [${planet.modules.extractor}] (${extCost}S)</button>
-                <button onclick="buildModule('${planet.id}', 'solarArray')">SOLAR [${planet.modules.solarArray}] (${solCost}S)</button>
+                <button onclick="buildModule('${planet.id}', 'extractor')">EXT [${planet.modules.extractor}] (${extCost}S)</button>
+                <button onclick="buildModule('${planet.id}', 'solarArray')">SOL [${planet.modules.solarArray}] (${solCost}S)</button>
                 <button onclick="buildModule('${planet.id}', 'lab')">LAB [${planet.modules.lab}] (${labCost}S)</button>
                 <button onclick="buildModule('${planet.id}', 'hab')">HAB [${planet.modules.hab}] (${habCost}S)</button>
             </div>
