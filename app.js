@@ -8,7 +8,7 @@ let gameState = {
     freighters: 0, 
     activeRoutes: 0, 
     planets: [],
-    sectors: [], // Added for Sector support
+    sectors: [], 
     scanCost: 10,
     maxPlanets: 3,
     upgrades: {
@@ -16,6 +16,8 @@ let gameState = {
         advancedDrills: 0,
         signalBoosters: 0
     },
+    // Accessibility: Track net change per second
+    rates: { scrap: 0, energy: 0, data: 0 },
     megaStage: 0,
     megaProgress: 0,
     eventLog: [],
@@ -94,8 +96,9 @@ function loadFromLocal() {
     if (savedData) {
         try {
             gameState = JSON.parse(savedData);
-            // Patch for old saves missing the sectors array
             if (!gameState.sectors) gameState.sectors = [];
+            // Accessibility Patch: Ensure rates exist in old saves
+            if (!gameState.rates) gameState.rates = { scrap: 0, energy: 0, data: 0 };
             
             logMessage("SYSTEM: LOCAL_DATA_RESTORED.");
             renderPlanets();
@@ -144,7 +147,6 @@ function manualScan() {
     if (gameState.energy >= gameState.scanCost) {
         gameState.energy -= gameState.scanCost;
         
-        // Sector Logic Implementation
         const lastSector = gameState.sectors[gameState.sectors.length - 1];
         if (!lastSector || lastSector.planets.length >= 2) {
             createNewSector();
@@ -286,11 +288,14 @@ function buyUpgrade(techType) {
 // --- MAIN LOOP ---
 
 function gameLoop() {
+    let tickScrap = 0;
+    let tickEnergy = 0.05; // Base gain
+    let tickData = 0;
+
     gameState.planets.forEach(planet => {
         const biome = BIOMES[planet.type];
         const spec = SPECIALIZATIONS[planet.specialization];
         
-        // Find Sector Modifier
         let sectorMod = { scrap: 1, energy: 1, data: 1 };
         if (planet.sectorId) {
             const sector = gameState.sectors.find(s => s.id === planet.sectorId);
@@ -300,25 +305,37 @@ function gameLoop() {
         const totalModules = planet.modules.extractor + planet.modules.solarArray + planet.modules.lab;
         let effectiveness = totalModules > 0 ? Math.min(1, 0.1 + (planet.assignedWorkers / totalModules)) : 0.1;
 
-        // Production with Sector Multipliers
+        // Production Math
         let dBonus = 1 + (gameState.upgrades.advancedDrills * 0.1);
-        gameState.scrap += (planet.modules.extractor * 0.25 * biome.scrap * dBonus * spec.scrap * sectorMod.scrap * effectiveness / 10);
+        let sProd = (planet.modules.extractor * 0.25 * biome.scrap * dBonus * spec.scrap * sectorMod.scrap * effectiveness / 10);
         
         let cBonus = (planet.type === "Frozen" && gameState.upgrades.cryoPipes) ? 2.5 : 1;
-        let energyGain = (planet.modules.solarArray * 0.4 * biome.energy * cBonus * spec.energy * sectorMod.energy * effectiveness / 10);
+        let eProd = (planet.modules.solarArray * 0.4 * biome.energy * cBonus * spec.energy * sectorMod.energy * effectiveness / 10);
+        if (gameState.megaStage >= 3) eProd *= 100;
         
-        if (gameState.megaStage >= 3) energyGain *= 100;
-        
-        gameState.energy += energyGain;
-        gameState.data += (planet.modules.lab * 0.1 * spec.data * sectorMod.data * effectiveness / 10);
+        let dProd = (planet.modules.lab * 0.1 * spec.data * sectorMod.data * effectiveness / 10);
 
-        // Drain
+        // Drain Math
         let drainMult = (gameState.megaStage < 3 && gameState.megaProgress > 0) ? 1.25 : 1.0; 
-        if (planet.assignedWorkers > 0) gameState.energy -= (planet.assignedWorkers * 0.1 * biome.oxygenCost * drainMult / 10);
-        if (planet.isExporting) gameState.energy -= (0.2 * drainMult / 10); 
+        let eDrain = 0;
+        if (planet.assignedWorkers > 0) eDrain += (planet.assignedWorkers * 0.1 * biome.oxygenCost * drainMult / 10);
+        if (planet.isExporting) eDrain += (0.2 * drainMult / 10); 
+
+        // Update Tick Production
+        tickScrap += sProd;
+        tickEnergy += (eProd - eDrain);
+        tickData += dProd;
     });
 
-    gameState.energy += 0.05; 
+    // Apply to resources
+    gameState.scrap += tickScrap;
+    gameState.energy += tickEnergy;
+    gameState.data += tickData;
+
+    // Calculate per second rates (loop is 100ms, so multiply by 10)
+    gameState.rates.scrap = tickScrap * 10;
+    gameState.rates.energy = tickEnergy * 10;
+    gameState.rates.data = tickData * 10;
 
     if (Math.random() < 0.01) saveToLocal();
 
@@ -328,9 +345,16 @@ function gameLoop() {
 // --- RENDERING ---
 
 function updateUI() {
-    document.getElementById('energy-display').innerText = Math.floor(gameState.energy);
-    document.getElementById('scrap-display').innerText = Math.floor(gameState.scrap);
-    document.getElementById('data-display').innerText = Math.floor(gameState.data);
+    const formatRate = (val) => (val >= 0 ? `+${val.toFixed(1)}` : `${val.toFixed(1)}`);
+
+    // Energy display with red warning color if rate is negative
+    const eDisplay = document.getElementById('energy-display');
+    eDisplay.innerText = `${Math.floor(gameState.energy)} (${formatRate(gameState.rates.energy)}/s)`;
+    eDisplay.style.color = gameState.rates.energy < 0 ? "#ff4444" : "#00ff41";
+
+    document.getElementById('scrap-display').innerText = `${Math.floor(gameState.scrap)} (${formatRate(gameState.rates.scrap)}/s)`;
+    document.getElementById('data-display').innerText = `${Math.floor(gameState.data)} (${formatRate(gameState.rates.data)}/s)`;
+    
     document.getElementById('pop-display').innerText = `${gameState.colonists} / ${gameState.maxColonists}`;
     document.getElementById('ship-display').innerText = `${gameState.activeRoutes} / ${gameState.freighters}`;
     document.getElementById('colony-display').innerText = `${gameState.planets.length} / ${gameState.maxPlanets}`;
@@ -368,7 +392,6 @@ function renderPlanets() {
     const list = document.getElementById('planet-list');
     list.innerHTML = ''; 
 
-    // Render by Sector
     if (gameState.sectors.length === 0) {
         list.innerHTML = '<div style="color: #444;">NO_COLONIES_DETECTED. EXECUTE_SCAN_TO_PROCEED.</div>';
         return;
@@ -377,7 +400,9 @@ function renderPlanets() {
     gameState.sectors.forEach(s => {
         const sM = SECTOR_TYPES[s.type];
         const h = document.createElement('div');
-        h.style.cssText = `border-left: 4px solid ${sM.color}; padding: 8px; margin-top: 25px; background: #111;`;
+        h.style.cssText = `border-left: 4px solid ${sM.color}; padding: 8px; margin-top: 25px; background: #111; cursor: help;`;
+        // ACCESSIBILITY: Sector Tooltip
+        h.title = `MODIFIERS: Scrap x${sM.scrap}, Energy x${sM.energy}, Data x${sM.data}`;
         h.innerHTML = `<strong style="color:${sM.color}">${s.id} // ${s.type}</strong><br><small style="color:#666">${sM.desc}</small>`;
         list.appendChild(h);
 
@@ -385,6 +410,9 @@ function renderPlanets() {
             const b = BIOMES[p.type];
             const card = document.createElement('div');
             card.className = 'planet-card';
+            card.style.cursor = 'help';
+            // ACCESSIBILITY: Biome Tooltip
+            card.title = `BIOME MODS: Scrap x${b.scrap}, Energy x${b.energy}, O2 Drain x${b.oxygenCost}`;
             const totalMod = p.modules.extractor + p.modules.solarArray + p.modules.lab + p.modules.hab;
 
             card.innerHTML = `
@@ -415,9 +443,9 @@ function renderPlanets() {
                 ${totalMod >= 5 && p.specialization === "NONE" ? `
                     <div class="spec-box">
                         <div style="font-size: 10px; margin-bottom: 5px;">SPECIALIZE_COLONY (COST: 250 DATA)</div>
-                        <button onclick="specializePlanet('${p.id}', 'FORGE')">FORGE</button>
-                        <button onclick="specializePlanet('${p.id}', 'POWER')">POWER</button>
-                        <button onclick="specializePlanet('${p.id}', 'ARCHIVE')">ARCHIVE</button>
+                        <button onclick="specializePlanet('${p.id}', 'FORGE')" title="Massive Scrap bonus, heavy Energy penalty">FORGE</button>
+                        <button onclick="specializePlanet('${p.id}', 'POWER')" title="Massive Energy bonus, heavy Scrap/Data penalty">POWER</button>
+                        <button onclick="specializePlanet('${p.id}', 'ARCHIVE')" title="Massive Data bonus, heavy Scrap/Energy penalty">ARCHIVE</button>
                     </div>
                 ` : ''}
             `;
@@ -432,9 +460,9 @@ function renderResearch() {
     const res = document.getElementById('research-list');
     if(!res) return;
     res.innerHTML = `
-        <button onclick="buyUpgrade('cryoPipes')" ${gameState.upgrades.cryoPipes ? 'disabled' : ''}>CRYO_PIPES (50 DATA)</button>
-        <button onclick="buyUpgrade('advancedDrills')">ADV_DRILLS (${100 + gameState.upgrades.advancedDrills * 50} DATA)</button>
-        <button onclick="buyUpgrade('signalBoosters')">SIGNAL_BOOSTERS (${75 + gameState.upgrades.signalBoosters * 50} DATA)</button>
+        <button onclick="buyUpgrade('cryoPipes')" ${gameState.upgrades.cryoPipes ? 'disabled' : ''} title="Doubles Energy on Frozen worlds">CRYO_PIPES (50 DATA)</button>
+        <button onclick="buyUpgrade('advancedDrills')" title="Increases Scrap extraction efficiency">ADV_DRILLS (${100 + gameState.upgrades.advancedDrills * 50} DATA)</button>
+        <button onclick="buyUpgrade('signalBoosters')" title="Reduces the cost increase of future scans">SIGNAL_BOOSTERS (${75 + gameState.upgrades.signalBoosters * 50} DATA)</button>
     `;
 }
 
