@@ -344,9 +344,13 @@ function gameLoop() {
         }
 
         // Apply Trait Modifiers
-        const traitMod = planet.traits.reduce((acc, t) => {
+        const traitMod = (planet.traits || []).reduce((acc, t) => { 
             const mod = PLANET_TRAITS[t];
-            return { scrap: acc.scrap * mod.scrap, energy: acc.energy * mod.energy, data: acc.data * mod.data };
+            return { 
+                scrap: acc.scrap * mod.scrap, 
+                energy: acc.energy * mod.energy, 
+                data: acc.data * mod.data 
+            };
         }, { scrap: 1, energy: 1, data: 1 });
 
         // Instability: Diminishing returns on over-extraction
