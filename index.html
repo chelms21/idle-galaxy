@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>ORBITAL_COMMAND_v2</title>
+    <meta charset="UTF-8">
+    <title>ORBITAL_COMMAND_v3</title>
     <style>
         body { 
             background: #000; color: #00ff41; font-family: 'Courier New', monospace; 
@@ -10,8 +11,9 @@
         
         /* LEFT SIDE: Mission Control (Fixed) */
         #mission-control {
-            width: 350px; border-right: 2px solid #00ff41; padding: 15px;
+            width: 360px; border-right: 2px solid #00ff41; padding: 15px;
             display: flex; flex-direction: column; overflow-y: auto;
+            background: #000;
         }
 
         /* RIGHT SIDE: Galaxy Map (Scrollable) */
@@ -25,13 +27,14 @@
         button { 
             background: transparent; border: 1px solid #00ff41; color: #00ff41; 
             padding: 5px; cursor: pointer; margin: 2px; font-family: inherit; font-size: 11px;
+            text-transform: uppercase;
         }
         button:hover { background: #00ff41; color: #000; }
         button:disabled { border-color: #222; color: #222; cursor: default; }
 
         .planet-card { 
             border: 1px solid #333; padding: 15px; margin-bottom: 20px; 
-            background: #000; width: 100%; max-width: 600px;
+            background: #000; width: 100%; max-width: 650px;
         }
 
         #event-log { 
@@ -40,13 +43,15 @@
         }
 
         details summary { cursor: pointer; color: #888; font-size: 12px; margin-bottom: 10px; }
-        h3 { border-bottom: 1px solid #00ff41; padding-bottom: 5px; font-size: 16px; margin-top: 20px; }
+        h3 { border-bottom: 1px solid #00ff41; padding-bottom: 5px; font-size: 14px; margin-top: 20px; color: #fff; }
+        
+        .spec-box { margin-top: 10px; border: 1px dashed #00ff41; padding: 8px; text-align: center; }
     </style>
 </head>
 <body>
 
     <div id="mission-control">
-        <h3>STATION_STATUS</h3>
+        <h3 style="margin-top:0">STATION_STATUS</h3>
         <div class="stats-bar">
             <div>ENERGY: <span id="energy-display">100</span></div>
             <div>SCRAP: <span id="scrap-display">20</span></div>
@@ -59,14 +64,22 @@
             <div style="color: #00ff41; font-size: 11px;">UNASSIGNED_LABOR: <span id="unassigned-display">0</span></div>
         </div>
 
-        <details>
+        <h3>DATA_MANAGEMENT</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+            <button onclick="saveToLocal()">MANUAL_SAVE</button>
+            <button onclick="loadFromLocal()">MANUAL_LOAD</button>
+            <button onclick="exportSave()">EXPORT_CODE</button>
+            <button onclick="importSave()">IMPORT_CODE</button>
+        </div>
+
+        <details style="margin-top: 15px;">
             <summary>[ OPERATIONS_MANUAL ]</summary>
-            <div style="font-size: 10px; color: #aaa;">
+            <div style="font-size: 10px; color: #aaa; line-height: 1.5;">
                 1. Scavenge wreckage for initial scrap.<br>
-                2. Scan for planets.<br>
+                2. Scan for planets (Cost increases per find).<br>
                 3. Recruit colonists & assign to planets.<br>
-                4. Establish trade to use global pool.<br>
-                5. Research to boost efficiency.
+                4. Establish trade routes to gain resources.<br>
+                5. Specialization: Requires 250 Data + 5 Modules.
             </div>
         </details>
 
@@ -77,7 +90,7 @@
         <button id="btn-freighter" onclick="buildFreighter()" style="width: 100%;"></button>
         <button id="btn-command" onclick="upgradeCommand()" style="width: 100%;"></button>
 
-        <h3>RESEARCH_DB</h3>
+        <h3>RESEARCH_DATABASE</h3>
         <div id="research-list"></div>
 
         <h3>SYSTEM_LOG</h3>
@@ -85,7 +98,7 @@
     </div>
 
     <div id="galaxy-view">
-        <h2 style="margin-top: 0;">GALAXY_MAP_OUTPUT</h2>
+        <h2 style="margin-top: 0; color: #fff; font-size: 20px;">GALAXY_MAP_OUTPUT</h2>
         <div id="planet-list">
             <div style="color: #444;">NO_COLONIES_DETECTED. EXECUTE_SCAN_TO_PROCEED.</div>
         </div>
