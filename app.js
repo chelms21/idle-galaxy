@@ -15,11 +15,21 @@ let gameState = {
         advancedDrills: 0,
         signalBoosters: 0
     },
+    // Megastructure State
+    megaStage: 0,
+    megaProgress: 0,
     eventLog: [],
     lastTick: Date.now()
 };
 
 // --- CONFIGURATION ---
+const MEGA_STAGES = [
+    { name: "SATELLITE_ARRAY", scrap: 1000, data: 500, energy: 500, desc: "Deploying primary solar collection net." },
+    { name: "THERMAL_COLLECTORS", scrap: 5000, data: 2500, energy: 2000, desc: "Installing high-heat absorption panels." },
+    { name: "ENERGY_TRANSMITTER", scrap: 15000, data: 10000, energy: 10000, desc: "Building the orbital microwave link." },
+    { name: "DYSON_COMPLETE", scrap: 0, data: 0, energy: 0, desc: "The star is fully harnessed. Victory achieved." }
+];
+
 const BIOMES = {
     "Volcanic": { scrap: 0.8, energy: 1.5, oxygenCost: 1.5, desc: "High Thermal Output / Dense Crust" },
     "Frozen":   { scrap: 0.7, energy: 0.5, oxygenCost: 1.0, desc: "Low Solar / Supercooled Circuits" },
@@ -37,6 +47,35 @@ const SPECIALIZATIONS = {
 
 const PREFIXES = ["Nova", "Sector", "Exo", "Prime", "Void", "Krypton", "Zenith"];
 
+// --- MEGASTRUCTURE FUNCTIONS ---
+
+function contributeToMega() {
+    const stage = MEGA_STAGES[gameState.megaStage];
+    if (gameState.megaStage >= 3) return; // Already finished
+
+    // Calculate how much we can contribute (10% of requirements at a time)
+    const scrapChunk = stage.scrap * 0.1;
+    const dataChunk = stage.data * 0.1;
+    const energyChunk = stage.energy * 0.1;
+
+    if (gameState.scrap >= scrapChunk && gameState.data >= dataChunk && gameState.energy >= energyChunk) {
+        gameState.scrap -= scrapChunk;
+        gameState.data -= dataChunk;
+        gameState.energy -= energyChunk;
+        gameState.megaProgress += 10;
+
+        if (gameState.megaProgress >= 100) {
+            gameState.megaProgress = 0;
+            gameState.megaStage++;
+            logMessage(`MEGASTRUCTURE: ${MEGA_STAGES[gameState.megaStage-1].name} COMPLETED.`);
+        }
+        updateUI();
+        renderMega();
+    } else {
+        logMessage("INSUFFICIENT_RESOURCES_FOR_CONSTRUCTION_PHASE.");
+    }
+}
+
 // --- PERSISTENCE ---
 
 function saveToLocal() {
@@ -52,6 +91,7 @@ function loadFromLocal() {
             logMessage("SYSTEM: LOCAL_DATA_RESTORED.");
             renderPlanets();
             renderResearch();
+            renderMega();
             updateUI();
         } catch (e) { logMessage("ERROR: CORRUPT_SAVE_DATA."); }
     }
@@ -224,13 +264,18 @@ function gameLoop() {
         gameState.scrap += (planet.modules.extractor * 0.25 * biome.scrap * dBonus * spec.scrap * effectiveness / 10);
         
         let cBonus = (planet.type === "Frozen" && gameState.upgrades.cryoPipes) ? 2.5 : 1;
-        gameState.energy += (planet.modules.solarArray * 0.4 * biome.energy * cBonus * spec.energy * effectiveness / 10);
+        let energyGain = (planet.modules.solarArray * 0.4 * biome.energy * cBonus * spec.energy * effectiveness / 10);
         
+        // Victory Bonus: If Dyson is done, energy is practically infinite
+        if (gameState.megaStage >= 3) energyGain *= 100;
+        
+        gameState.energy += energyGain;
         gameState.data += (planet.modules.lab * 0.1 * spec.data * effectiveness / 10);
 
         // Drain
-        if (planet.assignedWorkers > 0) gameState.energy -= (planet.assignedWorkers * 0.1 * biome.oxygenCost / 10);
-        if (planet.isExporting) gameState.energy -= (0.2 / 10); 
+        let drainMult = (gameState.megaStage < 3 && gameState.megaProgress > 0) ? 1.25 : 1.0; 
+        if (planet.assignedWorkers > 0) gameState.energy -= (planet.assignedWorkers * 0.1 * biome.oxygenCost * drainMult / 10);
+        if (planet.isExporting) gameState.energy -= (0.2 * drainMult / 10); 
     });
 
     gameState.energy += 0.05; 
@@ -246,7 +291,6 @@ function gameLoop() {
         logMessage(`ANOMALY: ${e.n} (${e.f()})`);
     }
 
-    // Auto-Save every 15 seconds roughly
     if (Math.random() < 0.01) saveToLocal();
 
     updateUI();
@@ -267,6 +311,28 @@ function updateUI() {
     document.getElementById('btn-recruit').innerText = `[ RECRUIT_COLONIST ] (${20 + (gameState.colonists * 10)} SCRAP)`;
     document.getElementById('btn-freighter').innerText = `[ CONSTRUCT_FREIGHTER ] (${50 + (gameState.freighters * 25)} SCRAP)`;
     document.getElementById('btn-command').innerText = `[ EXPAND_COMMAND_CENTER ] (${Math.pow(gameState.maxPlanets, 2) * 25} SCRAP)`;
+}
+
+function renderMega() {
+    const stage = MEGA_STAGES[gameState.megaStage];
+    const container = document.getElementById('mega-section');
+    if (!container) return;
+
+    if (gameState.megaStage >= 3) {
+        container.innerHTML = `<h3 style="color:#00ff41;">DYSON_SWARM_COMPLETE</h3><p style="font-size:10px;">Primary star harnessed. Victory achieved.</p>`;
+        return;
+    }
+
+    container.innerHTML = `
+        <h3 style="color: #ffaa00;">PROJECT: ${stage.name}</h3>
+        <div style="font-size: 10px; color: #888; margin-bottom: 5px;">${stage.desc}</div>
+        <div style="background: #111; height: 10px; border: 1px solid #333; margin-bottom: 10px;">
+            <div style="background: #ffaa00; height: 100%; width: ${gameState.megaProgress}%"></div>
+        </div>
+        <button onclick="contributeToMega()" style="width: 100%; border-color: #ffaa00; color: #ffaa00;">
+            CONSTRUCT_PHASE (Costs: ${stage.scrap/10}S, ${stage.data/10}D, ${stage.energy/10}E)
+        </button>
+    `;
 }
 
 function renderPlanets() {
@@ -332,4 +398,5 @@ window.onload = () => {
     loadFromLocal();
     setInterval(gameLoop, 100);
     renderResearch();
+    renderMega();
 };
