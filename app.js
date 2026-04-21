@@ -33,6 +33,37 @@ const SECTOR_TYPES = {
     "STELLAR_FORGE": { scrap: 0.5, energy: 2.0, data: 1.0, color: "#f00", desc: "High solar radiation (+Energy, -Scrap)." }
 };
 
+const TECH_TREE = {
+    "SIGNAL_BOOSTERS": { 
+        name: "SIGNAL_BOOSTERS", 
+        cost: 75, 
+        desc: "Reduces scan cost scaling.", 
+        requires: null,
+        onPurchase: () => { gameState.upgrades.signalBoosters++; }
+    },
+    "ADVANCED_DRILLS": { 
+        name: "ADVANCED_DRILLS", 
+        cost: 150, 
+        desc: "Increases scrap yield efficiency.", 
+        requires: "SIGNAL_BOOSTERS",
+        onPurchase: () => { gameState.upgrades.advancedDrills++; }
+    },
+    "CRYO_PIPES": { 
+        name: "CRYO_PIPES", 
+        cost: 100, 
+        desc: "Doubles energy on Frozen worlds.", 
+        requires: "SIGNAL_BOOSTERS",
+        onPurchase: () => { gameState.upgrades.cryoPipes = true; }
+    },
+    "AUTO_SCANNER": { 
+        name: "AUTO_SCANNER", 
+        cost: 500, 
+        desc: "Automated exploration protocols.", 
+        requires: "CRYO_PIPES",
+        onPurchase: () => { /* Logic for next update */ }
+    }
+};
+
 const PLANET_TRAITS = {
     "RICH_CORE": { scrap: 1.5, energy: 1, data: 1, desc: "High-density mineral deposits (+50% Scrap)" },
     "ANCIENT_RUINS": { scrap: 1, energy: 1, data: 2.0, desc: "Xeno-tech signatures detected (+100% Data)" },
@@ -287,15 +318,20 @@ function toggleTrade(planetId) {
     updateUI();
 }
 
-function buyUpgrade(techType) {
-    const costs = { cryoPipes: 50, advancedDrills: 100, signalBoosters: 75 };
-    const cost = costs[techType] + (techType !== 'cryoPipes' ? gameState.upgrades[techType] * 50 : 0);
-    if (gameState.data >= cost) {
-        gameState.data -= cost;
-        if (techType === 'cryoPipes') gameState.upgrades.cryoPipes = true;
-        else gameState.upgrades[techType]++;
+function buyUpgrade(techKey) {
+    const tech = TECH_TREE[techKey];
+    
+    const isUnlocked = !tech.requires || (gameState.upgrades[tech.requires.toLowerCase()] || gameState.upgrades.cryoPipes); // Simplified check for your current state keys
+
+    if (gameState.data >= tech.cost) {
+        gameState.data -= tech.cost;
+        tech.onPurchase();
+        
+        logMessage(`RESEARCH_COMPLETE: ${tech.name}_NODE_ACTIVE.`);
         renderResearch();
         updateUI();
+    } else {
+        logMessage("INSUFFICIENT_DATA_FOR_UPLINK.");
     }
 }
 
@@ -541,11 +577,43 @@ function renderLog() { document.getElementById('event-log').innerHTML = gameStat
 function renderResearch() {
     const res = document.getElementById('research-list');
     if(!res) return;
-    res.innerHTML = `
-        <button onclick="buyUpgrade('cryoPipes')" ${gameState.upgrades.cryoPipes ? 'disabled' : ''} title="Doubles Energy on Frozen worlds">CRYO_PIPES (50 DATA)</button>
-        <button onclick="buyUpgrade('advancedDrills')" title="Increases Scrap extraction efficiency">ADV_DRILLS (${100 + gameState.upgrades.advancedDrills * 50} DATA)</button>
-        <button onclick="buyUpgrade('signalBoosters')" title="Reduces the cost increase of future scans">SIGNAL_BOOSTERS (${75 + gameState.upgrades.signalBoosters * 50} DATA)</button>
-    `;
+    res.innerHTML = '';
+
+    Object.keys(TECH_TREE).forEach(key => {
+        const tech = TECH_TREE[key];
+        const isBought = (key === 'CRYO_PIPES' && gameState.upgrades.cryoPipes) || 
+                         (key === 'SIGNAL_BOOSTERS' && gameState.upgrades.signalBoosters > 0) ||
+                         (key === 'ADVANCED_DRILLS' && gameState.upgrades.advancedDrills > 0);
+        
+        // Determine if it should be visible
+        const canSee = !tech.requires || 
+                       (tech.requires === 'SIGNAL_BOOSTERS' && gameState.upgrades.signalBoosters > 0) ||
+                       (tech.requires === 'CRYO_PIPES' && gameState.upgrades.cryoPipes);
+
+        if (canSee) {
+            const btn = document.createElement('button');
+            btn.style.width = "100%";
+            btn.style.textAlign = "left";
+            btn.style.marginBottom = "5px";
+            btn.disabled = isBought;
+            
+            btn.innerHTML = `
+                <div style="display:flex; justify-content:space-between;">
+                    <span>${tech.name}</span>
+                    <span>${isBought ? '[ACTIVE]' : tech.cost + 'D'}</span>
+                </div>
+                <div style="font-size:9px; color:#666; text-transform:none;">${tech.desc}</div>
+            `;
+            
+            if (!isBought) btn.onclick = () => buyUpgrade(key);
+            res.appendChild(btn);
+        }
+    });
+
+    // If no new tech is visible
+    if (res.innerHTML === '') {
+        res.innerHTML = '<div style="color:#444; font-size:10px;">NO_ACTIVE_RESEARCH_NODES_FOUND.</div>';
+    }
 }
 
 window.onload = () => {
