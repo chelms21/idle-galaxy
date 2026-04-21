@@ -16,7 +16,8 @@ let gameState = {
         advancedDrills: 0,
         signalBoosters: 0
     },
-    // Accessibility: Track net change per second
+    selectedSector: null,
+    selectedPlanet: null,
     rates: { scrap: 0, energy: 0, data: 0 },
     megaStage: 0,
     megaProgress: 0,
@@ -388,70 +389,124 @@ function renderMega() {
     `;
 }
 
+// 1. THE MAP: Renders the high-level sector nodes
 function renderPlanets() {
-    const list = document.getElementById('planet-list');
-    list.innerHTML = ''; 
+    const grid = document.getElementById('map-grid');
+    grid.innerHTML = '';
 
     if (gameState.sectors.length === 0) {
-        list.innerHTML = '<div style="color: #444;">NO_COLONIES_DETECTED. EXECUTE_SCAN_TO_PROCEED.</div>';
+        grid.innerHTML = '<div style="color: #444;">NO_SECTORS_FOUND. EXECUTE_SCAN.</div>';
         return;
     }
 
     gameState.sectors.forEach(s => {
         const sM = SECTOR_TYPES[s.type];
-        const h = document.createElement('div');
-        h.style.cssText = `border-left: 4px solid ${sM.color}; padding: 8px; margin-top: 25px; background: #111; cursor: help;`;
-        // ACCESSIBILITY: Sector Tooltip
-        h.title = `MODIFIERS: Scrap x${sM.scrap}, Energy x${sM.energy}, Data x${sM.data}`;
-        h.innerHTML = `<strong style="color:${sM.color}">${s.id} // ${s.type}</strong><br><small style="color:#666">${sM.desc}</small>`;
-        list.appendChild(h);
+        const node = document.createElement('div');
+        node.style.cssText = `
+            width: 120px; height: 60px; border: 1px solid ${sM.color}; 
+            background: ${gameState.selectedSector === s.id ? sM.color + '33' : '#111'};
+            padding: 5px; cursor: pointer; text-align: center; font-size: 10px;
+            transition: 0.2s;
+        `;
+        node.innerHTML = `
+            <strong style="color:${sM.color}">${s.id}</strong><br>
+            <span style="color:#666">${s.type}</span><br>
+            <span style="color:#fff">${s.planets.length} NODES</span>
+        `;
+        node.onclick = () => {
+            gameState.selectedSector = s.id;
+            gameState.selectedPlanet = null; // Reset planet focus when changing sectors
+            renderPlanets();
+            updateConsole();
+        };
+        grid.appendChild(node);
+    });
+    updateConsole();
+}
 
-        gameState.planets.filter(p => p.sectorId === s.id).forEach(p => {
-            const b = BIOMES[p.type];
-            const card = document.createElement('div');
-            card.className = 'planet-card';
-            card.style.cursor = 'help';
-            // ACCESSIBILITY: Biome Tooltip
-            card.title = `BIOME MODS: Scrap x${b.scrap}, Energy x${b.energy}, O2 Drain x${b.oxygenCost}`;
-            const totalMod = p.modules.extractor + p.modules.solarArray + p.modules.lab + p.modules.hab;
+// 2. THE CONSOLE: Updates the "Bottom Drawer" based on selection
+function updateConsole() {
+    const sectorView = document.getElementById('selected-sector-view');
+    const planetView = document.getElementById('selected-planet-view');
 
-            card.innerHTML = `
-                <div style="display: flex; justify-content: space-between;">
-                    <strong>DESIGNATION: ${p.name}</strong>
-                    <span style="color: #00ff41;">[${p.specialization !== "NONE" ? p.specialization : p.type.toUpperCase()}]</span>
-                </div>
-                <div style="font-size: 10px; color: #555;">${b.desc}</div>
-                <div style="font-size: 10px; color: #888;">WORKERS: ${p.assignedWorkers} | DRAIN: x${b.oxygenCost}</div>
-                
-                <div style="margin: 8px 0; display: flex; justify-content: space-between;">
-                    <div>
-                        <button onclick="assignWorker('${p.id}', 1)">+ WORKER</button>
-                        <button onclick="assignWorker('${p.id}', -1)">- WORKER</button>
-                    </div>
-                    <button onclick="toggleTrade('${p.id}')" style="background: ${p.isExporting ? '#00ff41' : 'transparent'}; color: ${p.isExporting ? '#000' : '#00ff41'}">
-                        ${p.isExporting ? '[EXPORT_ACTIVE]' : '[ESTABLISH_TRADE]'}
-                    </button>
-                </div>
+    if (!gameState.selectedSector) return;
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+    const sector = gameState.sectors.find(s => s.id === gameState.selectedSector);
+    const sM = SECTOR_TYPES[sector.type];
+
+    // Update Sector Info Panel
+    sectorView.innerHTML = `
+        <strong style="color:${sM.color}; font-size: 14px;">${sector.id}</strong><br>
+        TYPE: ${sector.type}<br>
+        ${sM.desc}<br><br>
+        <strong>AVAILABLE_NODES:</strong><br>
+    `;
+
+    // Add clickable planet list to the Sector panel
+    gameState.planets.filter(p => p.sectorId === sector.id).forEach(p => {
+        const pBtn = document.createElement('button');
+        pBtn.style.width = "100%";
+        pBtn.style.textAlign = "left";
+        if (gameState.selectedPlanet === p.id) pBtn.style.background = "#00ff4133";
+        pBtn.innerText = `> ${p.name}`;
+        pBtn.onclick = () => {
+            gameState.selectedPlanet = p.id;
+            updateConsole();
+        };
+        sectorView.appendChild(pBtn);
+    });
+
+    // Update Planet Detail Panel
+    if (!gameState.selectedPlanet) {
+        planetView.innerHTML = `<div style="color:#444; margin-top:20px;">SELECT_PLANETARY_NODE_FOR_UPLINK...</div>`;
+        return;
+    }
+
+    const p = gameState.planets.find(p => p.id === gameState.selectedPlanet);
+    const b = BIOMES[p.type];
+    const totalMod = p.modules.extractor + p.modules.solarArray + p.modules.lab + p.modules.hab;
+
+    planetView.innerHTML = `
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding-bottom: 5px;">
+            <strong style="font-size: 16px;">NODE: ${p.name} [${p.type.toUpperCase()}]</strong>
+            <span style="color: #00ff41;">SPEC: ${p.specialization}</span>
+        </div>
+        
+        <div style="display: flex; gap: 40px; margin-top: 15px;">
+            <div style="width: 200px;">
+                <div style="font-size: 11px; color: #888; margin-bottom: 10px;">LABOR_MANAGEMENT</div>
+                <button onclick="assignWorker('${p.id}', 1)">+ ADD_WORKER</button>
+                <button onclick="assignWorker('${p.id}', -1)">- REMOVE_WORKER</button>
+                <div style="margin-top: 10px;">ASSIGNED: ${p.assignedWorkers}</div>
+                <div style="font-size: 9px; color: #555;">ENVIRONMENT_DRAIN: x${b.oxygenCost}</div>
+            </div>
+
+            <div style="flex-grow: 1;">
+                <div style="font-size: 11px; color: #888; margin-bottom: 10px;">MODULE_CONSTRUCTION</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                     <button onclick="buildModule('${p.id}', 'extractor')">EXTRACTOR [${p.modules.extractor}] (${10 + p.modules.extractor * 15}S)</button>
                     <button onclick="buildModule('${p.id}', 'solarArray')">SOLAR [${p.modules.solarArray}] (${10 + p.modules.solarArray * 15}S)</button>
                     <button onclick="buildModule('${p.id}', 'lab')">LAB [${p.modules.lab}] (${50 + p.modules.lab * 15}S)</button>
                     <button onclick="buildModule('${p.id}', 'hab')">HAB [${p.modules.hab}] (${30 + p.modules.hab * 15}S)</button>
                 </div>
+            </div>
 
+            <div style="width: 180px;">
+                <div style="font-size: 11px; color: #888; margin-bottom: 10px;">LOGISTICS</div>
+                <button onclick="toggleTrade('${p.id}')" style="width: 100%; background: ${p.isExporting ? '#00ff41' : 'transparent'}; color: ${p.isExporting ? '#000' : '#00ff41'}">
+                    ${p.isExporting ? '[EXPORT_ACTIVE]' : '[ESTABLISH_TRADE]'}
+                </button>
+                
                 ${totalMod >= 5 && p.specialization === "NONE" ? `
-                    <div class="spec-box">
-                        <div style="font-size: 10px; margin-bottom: 5px;">SPECIALIZE_COLONY (COST: 250 DATA)</div>
-                        <button onclick="specializePlanet('${p.id}', 'FORGE')" title="Massive Scrap bonus, heavy Energy penalty">FORGE</button>
-                        <button onclick="specializePlanet('${p.id}', 'POWER')" title="Massive Energy bonus, heavy Scrap/Data penalty">POWER</button>
-                        <button onclick="specializePlanet('${p.id}', 'ARCHIVE')" title="Massive Data bonus, heavy Scrap/Energy penalty">ARCHIVE</button>
+                    <div class="spec-box" style="margin-top:10px;">
+                        <button onclick="specializePlanet('${p.id}', 'FORGE')">FORGE</button>
+                        <button onclick="specializePlanet('${p.id}', 'POWER')">POWER</button>
+                        <button onclick="specializePlanet('${p.id}', 'ARCHIVE')">ARCHIVE</button>
                     </div>
                 ` : ''}
-            `;
-            list.appendChild(card);
-        });
-    });
+            </div>
+        </div>
+    `;
 }
 
 function renderLog() { document.getElementById('event-log').innerHTML = gameState.eventLog.join('<br>'); }
