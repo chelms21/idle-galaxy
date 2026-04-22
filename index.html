@@ -49,12 +49,22 @@
             font-size: 14px; border-radius: 2px;
         }
 
-        #research-list {
-            background: #050505;
+        #research-list, #automation-list {
+            height: 250px;             /* Set the requested height */
+            overflow-y: auto;          /* Enable vertical scrolling */
             border: 1px solid #1a1a1a;
             padding: 10px;
-            height: 200px;
-            overflow-y: auto;
+            background: #050505;
+            margin-bottom: 15px;
+        }
+
+        #research-list::-webkit-scrollbar, 
+        #automation-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        #research-list::-webkit-scrollbar-thumb, 
+        #automation-list::-webkit-scrollbar-thumb {
+            background: #00ff41;
         }
     </style>
 </head>
