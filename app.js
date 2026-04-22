@@ -24,6 +24,16 @@ let gameState = {
     eventLog: [],
     lastTick: Date.now()
 };
+gameState.automation = {
+    autoScan: false,
+    autoRecruit: false,
+    autoSiphon: false
+};
+gameState.routinesActive = {
+    autoScan: false,
+    autoRecruit: false,
+    autoSiphon: false
+};
 
 // --- CONFIGURATION ---
 const SECTOR_TYPES = {
@@ -61,6 +71,20 @@ const TECH_TREE = {
         desc: "Automated exploration protocols.", 
         requires: "CRYO_PIPES",
         onPurchase: () => { /* Logic for next update */ }
+    },
+    "AUTO_SCAN_PROTOCOL": { 
+        name: "AUTO_SCAN_PROTOCOL", 
+        cost: 500, 
+        desc: "Executes planet scans automatically when energy is capped.", 
+        requires: "SIGNAL_BOOSTERS",
+        onPurchase: () => { gameState.automation.autoScan = true; }
+    },
+    "SIPHON_LINK": { 
+        name: "SIPHON_LINK", 
+        cost: 1000, 
+        desc: "Automatically contributes to Megastructure when resources are high.", 
+        requires: "ADVANCED_DRILLS",
+        onPurchase: () => { gameState.automation.autoSiphon = true; }
     }
 };
 
@@ -362,72 +386,89 @@ function triggerRandomEvent() {
 
 function gameLoop() {
     let tickScrap = 0;
-    let tickEnergy = 0.05; 
+    let tickEnergy = 0.05; // Base passive energy gain
     let tickData = 0;
+    const routineDrain = 0.5; // Energy drain per active script per second
 
+    // 1. CALCULATE PLANETARY PRODUCTION
     gameState.planets.forEach(planet => {
         const biome = BIOMES[planet.type];
         const spec = SPECIALIZATIONS[planet.specialization];
+        const sector = gameState.sectors.find(s => s.id === planet.sectorId);
+        const sectorMod = sector ? SECTOR_TYPES[sector.type] : { scrap: 1, energy: 1, data: 1 };
         
-        let sectorMod = { scrap: 1, energy: 1, data: 1 };
-        let logisticsBonus = 1.0;
-        let fleetDrain = 0;
+        // Logistics & Fleet Calculations
+        let logisticsBonus = 1 + ((sector?.assignedFreighters || 0) * 0.1);
+        let fleetDrain = ((sector?.assignedFreighters || 0) * 0.05) / 10;
 
-        if (planet.sectorId) {
-            const sector = gameState.sectors.find(s => s.id === planet.sectorId);
-            if (sector) {
-                sectorMod = SECTOR_TYPES[sector.type];
-                // NEW: Apply Logistics Bonus
-                logisticsBonus = 1 + ((sector.assignedFreighters || 0) * 0.1);
-                fleetDrain = ((sector.assignedFreighters || 0) * 0.05) / 10;
-            }
-        }
-
+        // Trait Modifiers
         const traitMod = (planet.traits || []).reduce((acc, t) => { 
             const mod = PLANET_TRAITS[t];
-            return { 
-                scrap: acc.scrap * mod.scrap, 
-                energy: acc.energy * mod.energy, 
-                data: acc.data * mod.data 
-            };
+            return { scrap: acc.scrap * mod.scrap, energy: acc.energy * mod.energy, data: acc.data * mod.data };
         }, { scrap: 1, energy: 1, data: 1 });
 
+        // Instability & Effectiveness
         let instability = (planet.modules.extractor > 8) ? 0.7 : 1.0;
-
         const totalModules = planet.modules.extractor + planet.modules.solarArray + planet.modules.lab;
         let effectiveness = totalModules > 0 ? Math.min(1, 0.1 + (planet.assignedWorkers / totalModules)) : 0.1;
 
-        // NEW: Production with Logistics Bonus
+        // Individual Resource Production
         let dBonus = 1 + (gameState.upgrades.advancedDrills * 0.1);
         let sProd = (planet.modules.extractor * 0.25 * biome.scrap * dBonus * spec.scrap * sectorMod.scrap * traitMod.scrap * instability * effectiveness * logisticsBonus / 10);
         
         let cBonus = (planet.type === "Frozen" && gameState.upgrades.cryoPipes) ? 2.5 : 1;
         let eProd = (planet.modules.solarArray * 0.4 * biome.energy * cBonus * spec.energy * sectorMod.energy * traitMod.energy * effectiveness * logisticsBonus / 10);
+        
+        // Dyson Swarm Victory Multiplier
         if (gameState.megaStage >= 3) eProd *= 100;
         
         let dProd = (planet.modules.lab * 0.1 * spec.data * sectorMod.data * traitMod.data * effectiveness * logisticsBonus / 10);
 
+        // Colony Maintenance (Drain)
         let drainMult = (gameState.megaStage < 3 && gameState.megaProgress > 0) ? 1.25 : 1.0; 
         let eDrain = 0;
         if (planet.assignedWorkers > 0) eDrain += (planet.assignedWorkers * 0.1 * biome.oxygenCost * drainMult / 10);
         if (planet.isExporting) eDrain += (0.2 * drainMult / 10); 
 
+        // Add to global tick totals
         tickScrap += sProd;
         tickEnergy += (eProd - (eDrain + fleetDrain));
         tickData += dProd;
     });
 
+    // 2. EXECUTE AUTOMATION SCRIPTS (Outside the planet loop)
+    if (gameState.routinesActive.autoScan && gameState.automation.autoScan) {
+        tickEnergy -= (routineDrain / 10);
+        if (gameState.energy >= gameState.scanCost) {
+            manualScan();
+            logMessage("AUTO_ROUTINE: PLANET_DISCOVERED.");
+        }
+    }
+    
+    if (gameState.routinesActive.autoSiphon && gameState.automation.autoSiphon) {
+        tickEnergy -= (routineDrain / 10);
+        const stage = MEGA_STAGES[gameState.megaStage];
+        // Siphon if we have 150% of the required chunk for a phase
+        if (gameState.scrap >= (stage.scrap * 0.15) && 
+            gameState.data >= (stage.data * 0.15) && 
+            gameState.energy >= (stage.energy * 0.15)) {
+            contributeToMega();
+        }
+    }
+
+    // 3. UPDATE GLOBAL STATE & RATES
     gameState.scrap += tickScrap;
     gameState.energy += tickEnergy;
     gameState.data += tickData;
+    
+    // Convert per-tick (100ms) to per-second for the UI
+    gameState.rates = { 
+        scrap: tickScrap * 10, 
+        energy: tickEnergy * 10, 
+        data: tickData * 10 
+    };
 
-    gameState.rates.scrap = tickScrap * 10;
-    gameState.rates.energy = tickEnergy * 10;
-    gameState.rates.data = tickData * 10;
-
-    if (Math.random() < 0.001) triggerRandomEvent();
-    if (Math.random() < 0.01) saveToLocal();
-
+    // 4. REFRESH UI
     updateUI();
 }
 
@@ -475,6 +516,30 @@ function renderMega() {
             CONSTRUCT_PHASE (Costs: ${stage.scrap/10}S, ${stage.data/10}D, ${stage.energy/10}E)
         </button>
     `;
+}
+
+function toggleRoutine(routineKey) {
+    gameState.routinesActive[routineKey] = !gameState.routinesActive[routineKey];
+    renderAutomation();
+}
+
+function renderAutomation() {
+    const container = document.getElementById('automation-list');
+    if (!container) return;
+    container.innerHTML = '';
+
+    Object.keys(gameState.automation).forEach(key => {
+        if (gameState.automation[key]) {
+            const isActive = gameState.routinesActive[key];
+            const btn = document.createElement('button');
+            btn.style.width = "100%";
+            btn.style.background = isActive ? "#00ff4133" : "transparent";
+            btn.style.borderColor = isActive ? "#00ff41" : "#333";
+            btn.innerText = `${isActive ? '[RUNNING]' : '[STOPPED]'} ${key.toUpperCase()}`;
+            btn.onclick = () => toggleRoutine(key);
+            container.appendChild(btn);
+        }
+    });
 }
 
 function renderPlanets() {
