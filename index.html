@@ -50,21 +50,21 @@
         }
 
         #research-list, #automation-list {
-            height: 250px;             /* Set the requested height */
-            overflow-y: auto;          /* Enable vertical scrolling */
-            border: 1px solid #1a1a1a;
+            min-height: 250px;          /* Forces it to be 250px at least */
+            max-height: 300px;          /* Prevents it from growing too large */
+            overflow-y: scroll;         /* Forces the scrollbar to always be visible or active */
+            border: 1px solid #00ff41;  /* Matching the green theme */
             padding: 10px;
             background: #050505;
-            margin-bottom: 15px;
+            margin-bottom: 20px;
+            flex-shrink: 0;             /* CRITICAL: Prevents flexbox from squishing the box */
         }
 
-        #research-list::-webkit-scrollbar, 
-        #automation-list::-webkit-scrollbar {
-            width: 6px;
-        }
-        #research-list::-webkit-scrollbar-thumb, 
-        #automation-list::-webkit-scrollbar-thumb {
-            background: #00ff41;
+        #research-list button, #automation-list button {
+            margin-bottom: 8px;
+            display: block;
+            width: 100%;
+            text-align: left;
         }
     </style>
 </head>
